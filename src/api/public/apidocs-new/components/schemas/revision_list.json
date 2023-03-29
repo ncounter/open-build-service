@@ -1,0 +1,1 @@
+{"type": "array", "items": {"$ref": "revision.json"}, "xml": {"name": "revisionlist", "wrapped": true}}

@@ -1,0 +1,1 @@
+{"type": "array", "items": {"$ref": "issue_tracker.json"}, "xml": {"name": "issue-trackers", "wrapped": true}}

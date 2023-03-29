@@ -1,0 +1,1 @@
+{"description": "Bad request.\n\nXML Schema used for body validation: [status.xsd](../schema/status.xsd)\n", "content": {"application/xml; charset=utf-8": {"schema": {"$ref": "../../schemas/api_response.json"}, "examples": {"Subaccount chaining": {"value": {"code": "subaccount_chaining", "summary": "A subaccount can not be assigned to subaccount <login>"}}}}}}

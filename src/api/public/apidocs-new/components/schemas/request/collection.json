@@ -1,0 +1,1 @@
+{"type": "object", "properties": {"matches": {"type": "string", "example": 7, "xml": {"attribute": true}}, "request": {"type": "array", "items": {"$ref": "./request.json"}}}, "xml": {"name": "collection"}}

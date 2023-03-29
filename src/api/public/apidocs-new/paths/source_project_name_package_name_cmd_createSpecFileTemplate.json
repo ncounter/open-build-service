@@ -1,0 +1,1 @@
+{"post": {"deprecated": true, "summary": "Create a RPM Spec File Template for a specified package.", "description": "Create a RPM Spec File Template for a specified package. This endpoint\nis broken and will be removed.\nSee [https://github.com/openSUSE/open-build-service/issues/9707](https://github.com/openSUSE/open-build-service/issues/9707)\n", "tags": ["Sources - Packages"]}}

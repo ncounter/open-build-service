@@ -1,0 +1,1 @@
+{"type": "object", "properties": {"matches": {"type": "integer", "xml": {"attribute": true}}, "issue": {"type": "array", "items": {"$ref": "../issue.json"}}}, "xml": {"name": "collection"}}

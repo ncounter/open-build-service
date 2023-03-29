@@ -1,0 +1,1 @@
+{"post": {"deprecated": true, "summary": "Wipe package build results.", "description": "Wipe all build results of this package. This endpoint\nis broken and will be removed.\nSee [`POST /build/{project_name}?cmd=wipe`](#/Build/post_build__project_name__cmd_wipe).\n", "tags": ["Sources - Packages"]}}

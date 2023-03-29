@@ -1,0 +1,1 @@
+{"post": {"deprecated": true, "summary": "Trigger a package rebuild.", "description": "Triggers a rebuild of the package. This endpoint\nis broken and will be removed.\nSee [`POST /build/{project_name}?cmd=rebuild`](#/Build/post_build__project_name__cmd_rebuild).\n", "tags": ["Sources - Packages"]}}

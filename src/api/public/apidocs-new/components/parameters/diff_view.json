@@ -1,0 +1,1 @@
+{"in": "query", "name": "view", "schema": {"type": "string", "enum": ["unified", "xml"]}, "description": "Set the format of the diff being returned.\n\nDon't pass the parameter for custom diff format.\n\nSet to `unified` for unified content.\n\nSet to `xml` for structured content in a `sourcediff` xml element.\n", "example": "unified"}

@@ -1,0 +1,1 @@
+{"description": "Forbidden.\n\nXML Schema used for body validation: [status.xsd](../schema/status.xsd)\n", "content": {"application/xml; charset=utf-8": {"schema": {"$ref": "../schemas/api_response.json"}, "examples": {"update_user_not_authorized": {"value": {"code": "update_user_not_authorized", "summary": "You are not authorized to update this User."}}}}}}

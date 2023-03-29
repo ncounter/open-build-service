@@ -1,0 +1,1 @@
+{"in": "query", "name": "unified", "schema": {"type": "string", "enum": [1, 0]}, "description": "Set to `1` to use unified diff format. Same as setting `view=unified`.\n\nSetting `unified` to `1` takes precedence on the setting of the `view` parameter.\n\nSee `view` parameter for details on the unified format.\n", "example": 1}

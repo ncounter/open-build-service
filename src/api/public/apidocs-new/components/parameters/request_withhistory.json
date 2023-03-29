@@ -1,0 +1,1 @@
+{"in": "query", "name": "withhistory", "schema": {"type": "string"}, "description": "Include the request history.\n\nWithout a value or with the value `0` means without the request history. A value `1` means with the request history.\n", "example": 1}
