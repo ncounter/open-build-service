@@ -33,11 +33,12 @@
     width: $left-navigation-width;
     white-space: normal !important;
     border-left: 5px solid transparent;
+    transition: none;
     &:hover {
       border-left-color: $menu-hover-color;
       i { filter: none; }
     }
-    transition: none;
+    &.active { background-color: $menu-active-color; }
   }
   &.collapsed a { width: $left-navigation-collapsed-width; }
 

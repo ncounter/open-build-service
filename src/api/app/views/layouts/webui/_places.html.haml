@@ -1,23 +1,25 @@
 %h5.pt-2.text-light{ class: navigation == :left ? 'ps-2' : '' }
   %span.section-name Places
 
+- currentUrl = request.path
+
 %ul.ms-auto.pt-0.text-nowrap.menu-options.mb-4{ class: navigation == :left ? 'nav flex-column' : 'navbar-nav' }
   - if User.session
     - if navigation != :left
       %li.nav-item
-        = link_to(user_path(User.session!), id: 'link-to-user-home', class: 'nav-link') do
+        = link_to(user_path(User.session!), id: 'link-to-user-home', class: "nav-link #{currentUrl.include?(user_path(User.session!)) ? 'active' : ''}") do
           = image_tag_for(User.session, size: 23, custom_class: 'rounded-circle bg-light me-2')
           Profile
     %li.nav-item
       - tasks = User.session!.tasks
-      = link_to(my_tasks_path, class: 'nav-link', title: 'Tasks') do
+      = link_to(my_tasks_path, class: "nav-link #{currentUrl.include?(my_tasks_path) ? 'active' : ''}", title: 'Tasks') do
         %i.fas.fa-tasks.fa-lg.me-2
         %span.nav-item-name Tasks
         - unless tasks.zero?
           %span.badge.bg-primary.align-text-top= tasks
     %li.nav-item
       - if User.session!.home_project
-        = link_to(project_show_path(User.session!.home_project), class: 'nav-link', title: 'Your Home Project') do
+        = link_to(project_show_path(User.session!.home_project), class: "nav-link #{currentUrl.include?(project_show_path(User.session!.home_project)) ? 'active' : ''}", title: 'Your Home Project') do
           %i.fas.fa-cubes.fa-lg.me-2
           %span.nav-item-name Your Home Project
       - else
@@ -25,21 +27,21 @@
           %i.fas.fa-cubes.fa-lg.me-2
           %span.nav-item-name Create Your Home Project
     %li.nav-item
-      = link_to(projects_path, class: 'nav-link', title: 'All Projects') do
+      = link_to(projects_path, class: "nav-link #{currentUrl.include?(projects_path) ? 'active' : ''}", title: 'All Projects') do
         %i.fas.fa-list.fa-lg.me-2
         %span.nav-item-name All Projects
     %li.nav-item
-      = link_to(monitor_path, class: 'nav-link', title: 'Status Monitor') do
+      = link_to(monitor_path, class: "nav-link #{currentUrl.include?(monitor_path) ? 'active' : ''}", title: 'Status Monitor') do
         %i.fas.fa-heartbeat.fa-lg.me-2
         %span.nav-item-name Status Monitor
     - if User.admin_session?
       %li.nav-item
-        = link_to(configuration_path, class: 'nav-link', title: 'Configuration') do
+        = link_to(configuration_path, class: "nav-link #{currentUrl.include?(configuration_path) ? 'active' : ''}", title: 'Configuration') do
           %i.fas.fa-cogs.me-2
           %span.nav-item-name Configuration
     - if User.admin_session? || User.possibly_nobody.is_staff?
       %li.nav-item
-        = link_to("#{root_url}/flipper", class: 'nav-link', title: 'Feature Toggles') do
+        = link_to("#{root_url}/flipper", class: "nav-link #{currentUrl.include?("#{root_url}/flipper") ? 'active' : ''}", title: 'Feature Toggles') do
           %i.fas.fa-toggle-on.me-2
           %span.nav-item-name Feature Toggles
     - if navigation != :left
@@ -49,11 +51,11 @@
           Logout
   - else
     %li.nav-item
-      = link_to(projects_path, class: 'nav-link', title: 'All Projects') do
+      = link_to(projects_path, class: "nav-link #{currentUrl.include?(projects_path) ? 'active' : ''}", title: 'All Projects') do
         %i.fas.fa-list.fa-lg.me-2
         %span.nav-item-name All Projects
     - unless spider_bot
       %li.nav-item
-        = link_to(monitor_path, class: 'nav-link', title: 'Status Monitor') do
+        = link_to(monitor_path, class: "nav-link #{currentUrl.include?(monitor_path) ? 'active' : ''}", title: 'Status Monitor') do
           %i.fas.fa-heartbeat.fa-lg.me-2
           %span.nav-item-name Status Monitor
