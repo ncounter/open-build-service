@@ -15,6 +15,7 @@
           %span.badge.border.border-secondary.text-secondary.text-capitalize
             = title
     - if level == 1 && comment.commentable.is_a?(BsRequestAction)
+      - # WEBUI_ACTIONS_REFACTORING
       - sourcediff = comment.commentable.bs_request.webui_actions(action_id: comment.commentable, diffs: true, cacheonly: 1).first[:sourcediff].first
       - unless sourcediff[:error]
         :ruby

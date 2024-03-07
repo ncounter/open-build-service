@@ -57,6 +57,7 @@ class BsRequestTest < ActiveSupport::TestCase
     assert_equal req.creator, 'Iggy'
     assert_equal req.is_target_maintainer?(nil), false
 
+    # WEBUI_ACTIONS_REFACTORING
     wia = req.webui_actions(diffs: false)[0]
     assert_equal wia[:type], :add_role
     assert_equal wia[:tprj], 'kde4'
@@ -134,6 +135,7 @@ class BsRequestTest < ActiveSupport::TestCase
 
     # iggy is *not* target maintainer
     assert_equal req.is_target_maintainer?(users(:Iggy)), false
+    # WEBUI_ACTIONS_REFACTORING
     wia = req.webui_actions(diffs: false)
     assert_equal wia[0], type: :submit,
                          id: wia[0][:id],

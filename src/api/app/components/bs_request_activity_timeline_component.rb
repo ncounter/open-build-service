@@ -12,6 +12,7 @@ class BsRequestActivityTimelineComponent < ApplicationComponent
     @creator = User.find_by_login(bs_request.creator) || User.nobody
     action_comments = Comment.on_actions_for_request(@bs_request).without_parent.includes(:user)
     commented_actions = action_comments.map { |c| c.commentable.id }.uniq.compact
+    # WEBUI_ACTIONS_REFACTORING
     @diffs = commented_actions.flat_map { |a| @bs_request.webui_actions(action_id: a, diffs: true, cacheonly: 1) }
 
     # IDEA: Forge the first item to remove the need of having the hand-crafted "created request" haml fragment

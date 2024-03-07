@@ -57,6 +57,7 @@ class Webui::RequestController < Webui::WebuiController
 
       handle_notification
 
+      # WEBUI_ACTIONS_REFACTORING
       @actions = @bs_request.webui_actions(filelimit: @diff_limit, tarlimit: @diff_limit, diff_to_superseded: @diff_to_superseded, diffs: false)
       @action = @actions.first
       @active = @action[:name]
@@ -159,6 +160,7 @@ class Webui::RequestController < Webui::WebuiController
   def request_action
     @diff_limit = params[:full_diff] ? 0 : nil
     @index = params[:index].to_i
+    # WEBUI_ACTIONS_REFACTORING
     @actions = @bs_request.webui_actions(filelimit: @diff_limit, tarlimit: @diff_limit, diff_to_superseded: @diff_to_superseded, diffs: true,
                                          action_id: params['id'].to_i, cacheonly: 1)
     @action = @actions.find { |action| action[:id] == params['id'].to_i }
@@ -181,6 +183,7 @@ class Webui::RequestController < Webui::WebuiController
     # TODO: Change @diff_limit to a local variable
     @diff_limit = params[:full_diff] ? 0 : nil
     # TODO: Change @actions to a local variable
+    # WEBUI_ACTIONS_REFACTORING
     @actions = @bs_request.webui_actions(filelimit: @diff_limit, tarlimit: @diff_limit, diff_to_superseded: @diff_to_superseded, diffs: true,
                                          action_id: params['id'].to_i, cacheonly: 1)
     @action = @actions.find { |action| action[:id] == params['id'].to_i }
@@ -542,6 +545,7 @@ class Webui::RequestController < Webui::WebuiController
     @diff_to_superseded_id = params[:diff_to_superseded]
 
     # Handling request actions
+    # WEBUI_ACTIONS_REFACTORING
     @action = @bs_request.webui_actions(filelimit: @diff_limit, tarlimit: @diff_limit, diff_to_superseded: @diff_to_superseded,
                                         diffs: true, action_id: @action_id.to_i, cacheonly: 1).first
     active_action_index = @supported_actions.index(@active_action)

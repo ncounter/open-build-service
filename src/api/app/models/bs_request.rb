@@ -952,6 +952,7 @@ class BsRequest < ApplicationRecord
     end
   end
 
+  # WEBUI_ACTIONS_REFACTORING
   def webui_actions(opts = {})
     actions = []
     action_id = opts.delete(:action_id)
