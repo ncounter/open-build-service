@@ -958,10 +958,10 @@ class BsRequest < ApplicationRecord
     action_id = opts.delete(:action_id)
     xml = bs_request_actions.find_by(id: action_id) if action_id
     if xml
-      actions << action_details(opts, xml: xml)
+      actions << action_with_details(opts, xml: xml)
     else
       bs_request_actions.each do |action|
-        actions << action_details(opts, xml: action)
+        actions << action_with_details(opts, xml: action)
       end
     end
     actions
@@ -1021,7 +1021,7 @@ class BsRequest < ApplicationRecord
     FINAL_REQUEST_STATES.include?(state)
   end
 
-  def action_details(opts = {}, xml:)
+  def action_with_details(opts = {}, xml:)
     with_diff = opts.delete(:diffs)
     action = { type: xml.action_type }
     action[:id] = xml.id

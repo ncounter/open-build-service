@@ -13,7 +13,7 @@ RSpec.describe DiffListComponent, :vcr, type: :component do
 
   context 'with a request having a submit action' do
     before do
-      action = bs_request.send(:action_details, bs_request_opts, xml: bs_request.bs_request_actions.last)
+      action = bs_request.send(:action_with_details, bs_request_opts, xml: bs_request.bs_request_actions.last)
       render_inline(described_class.new(diff_list: action[:sourcediff].first['files']))
     end
 

@@ -3,7 +3,7 @@ class SourcediffComponentPreview < ViewComponent::Preview
   def preview
     bs_request = BsRequest.last
     opts = { filelimit: nil, tarlimit: nil, diff_to_superseded: nil, diffs: true, cacheonly: 1 }
-    action = bs_request.send(:action_details, opts, xml: bs_request.bs_request_actions.last)
+    action = bs_request.send(:action_with_details, opts, xml: bs_request.bs_request_actions.last)
     render(SourcediffComponent.new(bs_request: bs_request, action: action, index: 0))
   end
 end

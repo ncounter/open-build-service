@@ -3,7 +3,7 @@ class DiffComponentPreview < ViewComponent::Preview
   def preview
     bs_request = BsRequest.joins(:bs_request_actions).where(bs_request_actions: { type: :submit }).last
     opts = { filelimit: nil, tarlimit: nil, diff_to_superseded: nil, diffs: true, cacheonly: 1 }
-    action = bs_request.send(:action_details, opts, xml: bs_request.bs_request_actions.where(type: :submit).last)
+    action = bs_request.send(:action_with_details, opts, xml: bs_request.bs_request_actions.where(type: :submit).last)
     render(DiffComponent.new(diff: action[:sourcediff].last['files'].values.last['diff']['_content'], file_index: 3))
   end
 end
