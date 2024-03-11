@@ -23,7 +23,7 @@ class SourcediffTabComponent < ApplicationComponent
   end
 
   def release_info
-    @action[:type] == :maintenance_incident && @action[:releaseproject]
+    @action[:type] == :maintenance_incident && @action[:target_releaseproject]
   end
 
   def active_class

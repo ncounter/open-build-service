@@ -1023,27 +1023,14 @@ class BsRequest < ApplicationRecord
 
   def action_with_details(opts = {}, xml:)
     with_diff = opts.delete(:diffs)
-    action = { type: xml.action_type }
-    action[:id] = xml.id
-    action[:number] = xml.bs_request.number
-    if xml.source_project
-      action[:sprj] = xml.source_project
-      action[:spkg] = xml.source_package if xml.source_package
-      action[:srev] = xml.source_rev if xml.source_rev
-    end
-    if xml.target_project
-      action[:tprj] = xml.target_project
-      action[:tpkg] = xml.target_package if xml.target_package
-      action[:trepo] = xml.target_repository if xml.target_repository
-    end
-    action[:releaseproject] = xml.target_releaseproject if xml.target_releaseproject
+    action = BsRequestAction.find(xml.id).attributes.symbolize_keys!
     case xml.action_type # All further stuff depends on action type...
     when :submit
-      action[:name] = "Submit #{action[:spkg]}"
+      action[:name] = "Submit #{action[:source_package]}"
       superseded_bs_request_action = xml.find_action_with_same_target(opts[:diff_to_superseded])
       action[:sourcediff] = xml.webui_infos(opts.merge(superseded_bs_request_action: superseded_bs_request_action)) if with_diff
       creator = User.find_by_login(self.creator)
-      target_package = Package.find_by_project_and_name(action[:tprj], action[:tpkg])
+      target_package = Package.find_by_project_and_name(action[:target_project], action[:target_package])
       action[:creator_is_target_maintainer] = true if creator.has_local_role?(Role.hashed['maintainer'], target_package)
 
       if target_package
@@ -1072,15 +1059,15 @@ class BsRequest < ApplicationRecord
       end
 
     when :delete
-      action[:name] = if action[:tpkg]
-                        "Delete #{action[:tpkg]}"
-                      elsif action[:trepo]
-                        "Delete #{action[:trepo]}"
+      action[:name] = if action[:target_package]
+                        "Delete #{action[:target_package]}"
+                      elsif action[:target_repository]
+                        "Delete #{action[:target_repository]}"
                       else
-                        "Delete #{action[:tprj]}"
+                        "Delete #{action[:target_project]}"
                       end
 
-      action[:sourcediff] = xml.webui_infos if action[:tpkg] && with_diff # API / Backend don't support whole project diff currently
+      action[:sourcediff] = xml.webui_infos if action[:target_package] && with_diff # API / Backend don't support whole project diff currently
     when :add_role
       action[:name] = 'Add Role'
       action[:role] = xml.role
@@ -1093,10 +1080,10 @@ class BsRequest < ApplicationRecord
       action[:user] = xml.person_name
       action[:group] = xml.group_name
     when :maintenance_incident
-      action[:name] = "Incident #{action[:spkg]}"
+      action[:name] = "Incident #{action[:source_package]}"
       action[:sourcediff] = xml.webui_infos(superseded_bs_request_action: xml.find_action_with_same_target(opts[:diff_to_superseded])) if with_diff
     when :maintenance_release, :release
-      action[:name] = "Release #{action[:spkg]}"
+      action[:name] = "Release #{action[:source_package]}"
       action[:sourcediff] = xml.webui_infos(superseded_bs_request_action: xml.find_action_with_same_target(opts[:diff_to_superseded])) if with_diff
     end
 

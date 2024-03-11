@@ -296,8 +296,8 @@ class Webui::RequestController < Webui::WebuiController
     redirect_to request_show_path(params[:number], params[:request_action_id]) unless @bs_request_action.tab_visibility.build
 
     @active_tab = 'build_results'
-    @project = @staging_project || @action[:sprj]
-    @buildable = @action[:spkg] || @project
+    @project = @staging_project || @action[:source_project]
+    @buildable = @action[:source_package] || @project
   end
 
   def rpm_lint
@@ -305,8 +305,8 @@ class Webui::RequestController < Webui::WebuiController
 
     @active_tab = 'rpm_lint'
     @ajax_data = {}
-    @ajax_data['project'] = @action[:sprj] if @action[:sprj]
-    @ajax_data['package'] = @action[:spkg] if @action[:spkg]
+    @ajax_data['project'] = @action[:source_project] if @action[:source_project]
+    @ajax_data['package'] = @action[:source_package] if @action[:source_package]
     @ajax_data['is_staged_request'] = true if @staging_project.present?
   end
 

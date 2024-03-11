@@ -9,9 +9,9 @@
       - (@action[:sourcediff] || []).each do |sourcediff|
         .clearfix.mb-2
           .btn-group.float-end
-            %button.btn.btn-outline-secondary.expand-diffs{ data: { object: @action[:spkg] } }
+            %button.btn.btn-outline-secondary.expand-diffs{ data: { object: @action[:source_package] } }
               Expand all
-            %button.btn.btn-outline-secondary.collapse-diffs{ data: { object: @action[:spkg] } }
+            %button.btn.btn-outline-secondary.collapse-diffs{ data: { object: @action[:source_package] } }
               Collapse all
 
         - if sourcediff[:error]
@@ -24,8 +24,8 @@
               #{diff_label(sourcediff['new'])} – #{diff_label(sourcediff['old'])}
           - if sourcediff['filenames'].present?
             - diff_list = sourcediff['files'].sort_by { |k, _v| sourcediff['filenames'].find_index(k) }.to_h
-            = render(DiffListComponent.new(diff_list:, view_id: @action[:spkg], commentable:, source_package:,
-                                           target_package:, source_rev: @action[:srev]))
+            = render(DiffListComponent.new(diff_list:, view_id: @action[:source_package], commentable:, source_package:,
+                                           target_package:, source_rev: @action[:source_rev]))
           - else
             .mb-2
               %p.lead

@@ -59,8 +59,8 @@ class BsRequestTest < ActiveSupport::TestCase
 
     # WEBUI_ACTIONS_REFACTORING
     wia = req.webui_actions(diffs: false)[0]
-    assert_equal wia[:type], :add_role
-    assert_equal wia[:tprj], 'kde4'
+    assert_equal wia[:type], 'add_role'
+    assert_equal wia[:target_project], 'kde4'
     assert_equal wia[:role], 'reviewer'
     assert_equal wia[:user], 'Iggy'
 
@@ -140,11 +140,11 @@ class BsRequestTest < ActiveSupport::TestCase
     assert_equal wia[0], type: :submit,
                          id: wia[0][:id],
                          number: 1027,
-                         sprj: 'home:Iggy',
-                         spkg: 'TestPack',
-                         srev: '1',
-                         tprj: 'kde4',
-                         tpkg: 'mypackage',
+                         source_project: 'home:Iggy',
+                         source_package: 'TestPack',
+                         source_rev: '1',
+                         target_project: 'kde4',
+                         target_package: 'mypackage',
                          name: 'Submit TestPack',
                          diff_not_cached: false
   end

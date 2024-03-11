@@ -4,7 +4,7 @@
       = request_action_header(@action, @bs_request.creator)
   - if release_info
     %i
-      Release in #{@action[:releaseproject]}
+      Release in #{@action[:target_releaseproject]}
   %hr
   .row
     - if @action[:diff_not_cached]
@@ -18,9 +18,9 @@
         .col-lg-8
           .clearfix.mb-2
             .btn-group.float-end
-              %button.btn.btn-outline-secondary.expand-diffs{ data: { package: @action[:spkg] } }
+              %button.btn.btn-outline-secondary.expand-diffs{ data: { package: @action[:source_package] } }
                 Expand all
-              %button.btn.btn-outline-secondary.collapse-diffs{ data: { package: @action[:spkg] } }
+              %button.btn.btn-outline-secondary.collapse-diffs{ data: { package: @action[:source_package] } }
                 Collapse all
 
           - if sourcediff[:error]
@@ -39,7 +39,7 @@
                                                                                           file: sourcediff['files'][filename],
                                                                                           index: file_index,
                                                                                           last: sourcediff['filenames'].last == filename,
-                                                                                          package: @action[:spkg],
+                                                                                          package: @action[:source_package],
                                                                                           linkinfo: nil }
             - else
               .mb-2
@@ -47,6 +47,6 @@
                   No source changes.
         .col-lg-4
           = render partial: 'webui/shared/buildresult_box',
-                  locals: { project: @action[:sprj], package: @action[:spkg], bs_request: @bs_request, index: @index }
+                  locals: { project: @action[:source_project], package: @action[:source_package], bs_request: @bs_request, index: @index }
           - if sourcediff['issues'].present?
             = render partial: 'issues_table', locals: { issues: sourcediff['issues'] }
