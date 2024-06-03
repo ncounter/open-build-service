@@ -36,7 +36,7 @@ class Notification < ApplicationRecord
   scope :for_comments, -> { where(notifiable_type: 'Comment') }
   scope :for_requests, -> { where(notifiable_type: 'BsRequest') }
   scope :for_reviews, -> { where(event_type: 'Event::ReviewWanted') }
-  scope :for_project_name, ->(project_name) { joins(:projects).where(projects: { name: project_name }) }
+  scope :for_project_name, ->(project_name) { where(notified_projects.pluck(:project_id).include?(Project.find_by_name(project_name).id)) }
   scope :for_group_title, ->(group_title) { joins(:groups).where(groups: { title: group_title }) }
   scope :stale, -> { where(created_at: ...(CONFIG['notifications_lifetime'] ||= 365).days.ago) }
 
