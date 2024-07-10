@@ -1,105 +1,107 @@
 .list-group-item.px-0.px-md-1.py-3
   .row
-    .col-9
-      .row
-        <!-- title -->
-        .col
-          %i.fas.fa-code-pull-request
-          %a.mx-1='Submit Request #111'
-          <!-- state-badge -->
-          %span.badge.text-bg-success.ms-1
-            %i.fas.fa-code-merge.me-1
-            accepted
-      .row.mt-2.ps-sm-4
-        <!-- author-datetime -->
-        .col
-          %span.me-2
-            = render(AvatarComponent.new(name: 'Iggy', email: User.find_by_login!('Iggy').email, size: 18, shape: :circle))
-            %a.ms-1.small.text-secondary= 'Iggy'
-          %small.text-nowrap
-            = render TimeComponent.new(time: @notification.created_at)
-      .row.mt-3.ps-sm-4
-        <!-- source-target -->
-        .col-auto.ps-xs-2
-          .smart-overflow
-            %a.me-1 home:Iggy:branches:home:Admin
-            \/
-            %a.me-1 ruby
-            %i.fas.fa-long-arrow-alt-right.text-info.mx-2
-            %a.me-1 home:Admin
-            \/
-            %a.me-1 ruby
-            <!-- build-status -->
-            %i.ms-2.fa.fa-check.text-success
-      .row.d-none.d-md-block.ps-4
-        <!-- description -->
-        .col
-          %p.mt-3.mb-0=  'Eos dolores et. Corporis tempore eos. Libero delectus amet....'
-    .col-3.text-end
-      <!-- comments-badge -->
-      .row.mt-1
-        %span.small.ms-1
-          %i.fas.fa-comment.me-1
-          11 comments
-      .row.mt-1
-        <!-- reviews-badge -->
-        %span.small.ms-1
-          %i.fas.fa-search.me-1
-          2 reviews
+    <!-- title -->
+    .col
+      %i.fas.fa-code-pull-request
+      %a.mx-1='Submit Request #111'
+    .col.text-end
+      <!-- state-badge -->
+      %span.badge.text-bg-success.ms-1
+        %i.fas.fa-code-merge.me-1
+        accepted
+  .row.mt-2.ps-sm-4
+    <!-- source-target -->
+    .col-auto.ps-xs-2
+      .smart-overflow
+        %a.me-1 home:Iggy:branches:home:Admin
+        \/
+        %a.me-1 ruby
+        %i.fas.fa-long-arrow-alt-right.text-info.mx-2
+        %a.me-1 home:Admin
+        \/
+        %a.me-1 ruby
+        <!-- build-status -->
+        %i.ms-2.fa.fa-check.text-success
+  .row.d-none.d-md-block.ps-4
+    <!-- description -->
+    .col
+      %p.mt-3.mb-0=  'Eos dolores et. Corporis tempore eos. Libero delectus amet....'
+  .text-end
+    <!-- author -->
+    %span.ms-3
+      %span.small
+        = render(AvatarComponent.new(name: 'Iggy', email: User.find_by_login!('Iggy').email, size: 18, shape: :circle))
+        %a.ms-1.text-secondary= 'Iggy'
+      %span
+        \-
+      <!-- datetime -->
+      %small.text-nowrap.small
+        = render TimeComponent.new(time: @notification.created_at)
+    <!-- comments-badge -->
+    %span.ms-3
+      %span.small
+        %i.fas.fa-comment.me-1
+        11 comments
+    %span.ms-3
+      <!-- reviews-badge -->
+      %span.small
+        %i.fas.fa-search.me-1
+        2 reviews
 
 
 
 .list-group-item.px-0.px-md-1.py-3
   .row
-    .col-9
-      .row
-        <!-- title -->
-        .col
+    <!-- title -->
+    .col
+      %i.fas.fa-code-pull-request
+      %a.mx-1='Multiple Actions Request #222'
+    .col.text-end
+      <!-- state-badge -->
+      %span.badge.text-bg-danger.ms-1
+        %span.fa-custom-pr-closed.me-1
           %i.fas.fa-code-pull-request
-          %a.mx-1='Multiple Actions Request #222'
-          <!-- state-badge -->
-          %span.badge.text-bg-danger.ms-1
-            %span.fa-custom-pr-closed.me-1
-              %i.fas.fa-code-pull-request
-              %i.fas.fa-times.fa-xs{ style: 'right: 6%'}
-            declined
-      .row.mt-2.ps-sm-4
-        <!-- author-datetime -->
-        .col-auto.pe-0
-          %span.me-2
-            = render(AvatarComponent.new(name: 'Admin', email: User.find_by_login!('Admin').email, size: 18, shape: :circle))
-            %a.small.ms-1.text-secondary= 'Requestor'
-          %small.text-nowrap
-            = render TimeComponent.new(time: @notification.created_at)
-      .row.mt-3.ps-sm-4
-        <!-- source-target -->
-        .col-auto.ps-xs-2
-          .smart-overflow
-            %a.me-1 requestor_project
-            %i.fas.fa-long-arrow-alt-right.text-info.mx-2
-            %a.me-1 home:Admin
-            <!-- build-status -->
-            %i.ms-2.fa.fa-check.text-success
-      .row.d-none.d-md-block.ps-4
-        <!-- description -->
-        .col
-          %p.mt-3.mb-0=  'Doloremque et suscipit. Dolor omnis magnam. Velit neque optio.....'
-    .col-3.text-end
-      <!-- actions-badge -->
-      .row.mt-1
-        %span.small.ms-1
-          %i.fa.fa-tasks.me-1
-          23 actions
-      <!-- comments-badge -->
-      .row.mt-1
-        %span.small.ms-1
-          %i.fas.fa-comment.me-1
-          3 comments
-      <!-- reviews-badge -->
-      .row.mt-1
-        %span.small.ms-1
-          %i.fas.fa-search.me-1
-          1 review
+          %i.fas.fa-times.fa-xs{ style: 'right: 6%'}
+        declined
+  .row.mt-2.ps-sm-4
+    <!-- source-target -->
+    .col-auto.ps-xs-2
+      .smart-overflow
+        %a.me-1 requestor_project
+        %i.fas.fa-long-arrow-alt-right.text-info.mx-2
+        %a.me-1 home:Admin
+        <!-- build-status -->
+        %i.ms-2.fa.fa-check.text-success
+  .row.d-none.d-md-block.ps-4
+    <!-- description -->
+    .col
+      %p.mt-3.mb-0=  'Doloremque et suscipit. Dolor omnis magnam. Velit neque optio.....'
+  .text-end
+    <!-- author -->
+    %span.ms-3
+      %span.small
+        = render(AvatarComponent.new(name: 'Admin', email: User.find_by_login!('Admin').email, size: 18, shape: :circle))
+        %a.ms-1.text-secondary= 'Admin'
+      %span
+        \-
+      <!-- datetime -->
+      %small.text-nowrap.small
+        = render TimeComponent.new(time: @notification.created_at)
+    <!-- actions-badge -->
+    %span.ms-3
+      %span.small.ms-1
+        %i.fa.fa-tasks.me-1
+        23 actions
+    <!-- comments-badge -->
+    %span.ms-3
+      %span.small.ms-1
+        %i.fas.fa-comment.me-1
+        3 comments
+    <!-- reviews-badge -->
+    %span.ms-3
+      %span.small.ms-1
+        %i.fas.fa-search.me-1
+        1 review
 
 
 
@@ -108,49 +110,50 @@
 
 .list-group-item.px-0.px-md-1.py-3
   .row
-    .col-9
-      .row
-        <!-- title -->
-        .col
-          %i.fas.fa-comments
-          %a.mx-1='Maintenance Request #333'
-          <!-- state-badge -->
-          %span.badge.text-bg-secondary.ms-1
-            %i.fas.fa-code-pull-request.me-1
-            new
-      .row.mt-2.ps-sm-4
-        <!-- author-datetime -->
-        .col-auto.pe-0
-          %span.me-2
-            = render(AvatarComponent.new(name: @notification.notifiable.creator, email: '', size: 18, shape: :circle))
-            %a.small.ms-1.text-secondary= 'Iggy'
-          %small.text-nowrap
-            = render TimeComponent.new(time: @notification.created_at)
-      .row.mt-3.ps-sm-4
-        <!-- source-target -->
-        .col-auto.ps-xs-2
-          .smart-overflow
-            %a.me-1 home:Iggy:branches:home:Admin
-            \/
-            %a.me-1 ruby
-            %i.fas.fa-long-arrow-alt-right.text-info.mx-2
-            %a.me-1 home:Admin
-            \/
-            %a.me-1 ruby
-            <!-- build-status -->
-            %i.ms-2.fa.fa-check.text-success
-      .row.d-none.d-md-block.ps-4
-        <!-- description -->
-        .col
-          %p.mt-3.mb-0=  helpers.render_without_markdown(helpers.excerpt(@notification))
-    .col-3.text-end
-      .row.mt-1
-        <!-- comments-badge -->
-        %span.small.ms-1
-          %i.fas.fa-comment.me-1
-          3 comments
-      <!-- reviews-badge -->
-      .row.mt-1
-        %span.small.ms-1
-          %i.fas.fa-search.me-1
-          1 reviews
+    <!-- title -->
+    .col
+      %i.fas.fa-comments
+      %a.mx-1='Maintenance Request #333'
+      <!-- state-badge -->
+    .col.text-end
+      %span.badge.text-bg-secondary.ms-1
+        %i.fas.fa-code-pull-request.me-1
+        new
+  .row.mt-2.ps-sm-4
+    <!-- source-target -->
+    .col-auto.ps-xs-2
+      .smart-overflow
+        %a.me-1 home:Iggy:branches:home:Admin
+        \/
+        %a.me-1 ruby
+        %i.fas.fa-long-arrow-alt-right.text-info.mx-2
+        %a.me-1 home:Admin
+        \/
+        %a.me-1 ruby
+        <!-- build-status -->
+        %i.ms-2.fa.fa-check.text-success
+  .row.d-none.d-md-block.ps-4
+    <!-- description -->
+    .col
+      %p.mt-3.mb-0=  helpers.render_without_markdown(helpers.excerpt(@notification))
+  .text-end
+    <!-- author -->
+    %span.ms-3
+      %span.small
+        = render(AvatarComponent.new(name: 'Admin', email: User.find_by_login!('Admin').email, size: 18, shape: :circle))
+        %a.ms-1.text-secondary= 'Admin'
+      %span
+        \-
+      <!-- datetime -->
+      %small.text-nowrap.small
+        = render TimeComponent.new(time: @notification.created_at)
+    %span.ms-3
+      <!-- comments-badge -->
+      %span.small.ms-1
+        %i.fas.fa-comment.me-1
+        3 comments
+    <!-- reviews-badge -->
+    %span.ms-3
+      %span.small.ms-1
+        %i.fas.fa-search.me-1
+        1 reviews
