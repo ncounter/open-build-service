@@ -17,5 +17,4 @@
                              'review-reason': helpers.render_as_markdown(reason_when_review_was_requested(review: review)) }) do
           = reviewer_icon_and_text(review: review)
 
-:javascript
-  handleReviewerCollapsibleForm();
+- content_for(:content_for_head, javascript_include_tag('webui/request_show_redesign/add_review'))

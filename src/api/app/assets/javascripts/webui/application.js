@@ -56,7 +56,6 @@
 //= require webui/user_profile.js
 //= require webui/long_text.js
 //= require webui/collapsible_tooltip.js
-//= require webui/request_show_redesign/add_review.js
 //= require webui/request_show_redesign/build_results.js
 //= require webui/request_show_redesign/bs_request_actions.js
 //= require webui/request_show_redesign/chart_build_results.js

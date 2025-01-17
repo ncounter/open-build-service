@@ -6,6 +6,7 @@
 //= link webui/cm2/codemirror-prjconf.js
 //= link webui/cm2/codemirror-xml.js
 //= link webui/content-selector-filters.js
+//= link webui/request_show_redesign/add_review.js
 //= link_tree ../images
 
 
