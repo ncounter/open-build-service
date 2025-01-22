@@ -53,3 +53,8 @@ function buildResultStatusFilterQueryParams(buildStateFromSummaryChart) {
       return '&status_disabled=1&status_excluded=1';
   }
 }
+
+$(document).ready(function() {
+  updateChartBuildResults();
+  setInterval(updateChartBuildResults, 60000);
+});

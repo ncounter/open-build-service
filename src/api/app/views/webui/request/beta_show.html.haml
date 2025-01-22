@@ -105,9 +105,6 @@
                     = render TimeComponent.new(time: @bs_request.accept_at)
 
               .chart_build_results_wrapper{ data: { url: request_chart_build_results_path } }
-              :javascript
-                updateChartBuildResults();
-                setInterval(updateChartBuildResults, 60000);
 
               - if policy(@bs_request).handle_request? && @bs_request.can_be_reopened?
                 = render partial: 'accordion_reviews', locals: { accepted_reviews: @request_reviews.accepted,
@@ -125,4 +122,6 @@
     = render partial: 'webui/shared/locking_dialog', locals: { commentable: @bs_request, entity_type: 'request' }
   - if Flipper.enabled?(:content_moderation, User.possibly_nobody)
     = render partial: 'webui/shared/report_modal'
+
+- content_for(:content_for_head, javascript_include_tag('webui/request_show_redesign/chart_build_results'))
 -# haml-lint:enable ViewLength
