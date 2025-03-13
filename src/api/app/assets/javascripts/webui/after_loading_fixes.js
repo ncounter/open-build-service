@@ -8,6 +8,6 @@ $(document).ready(function() {
       const inputWrapper = $(this).children('label');
       inputWrapper.addClass('input-group flex-nowrap');
       inputWrapper.css('max-width', '500px');
-      inputWrapper.append("<span class='input-group-text'><i class='fa fa-search'></i></span>");
+      inputWrapper.prepend("<span class='input-group-text'><i class='fa fa-search'></i></span>");
     }); }, 50);
 });
