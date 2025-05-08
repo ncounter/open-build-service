@@ -14,8 +14,8 @@ module StagingProject
     scope :staging_projects, -> { where.not(staging_workflow: nil) }
   end
 
-  HISTORY_EVENT_TYPES = [:staging_project_created, :staged_request, :unstaged_request].freeze
-  FORCEABLE_STATES = [:building, :failed, :testing, :acceptable].freeze
+  HISTORY_EVENT_TYPES = %i[staging_project_created staged_request unstaged_request].freeze
+  FORCEABLE_STATES = %i[building failed testing acceptable].freeze
 
   def accept
     # Disabling build for all repositories and architectures.
@@ -99,7 +99,7 @@ module StagingProject
   # The requests to review are requests which are not related to the staging project (unless they are also staged).
   # They simply need a review from the maintainers of the staging project.
   def requests_to_review
-    @requests_to_review ||= BsRequest.with_open_reviews_for(by_project: name)
+    @requests_to_review ||= BsRequest.with_actions_and_reviews.where(state: :review, reviews: { by_project: name, state: :new })
   end
 
   def building_repositories
@@ -204,7 +204,7 @@ module StagingProject
     @building_repositories = []
 
     buildresult.elements('result') do |result|
-      building = ['published', 'unpublished'].exclude?(result['state']) || result['dirty'] == 'true'
+      building = %w[published unpublished].exclude?(result['state']) || result['dirty'] == 'true'
       add_broken_packages(result)
       add_building_repositories(result) if building
     end
@@ -216,7 +216,7 @@ module StagingProject
     result.elements('status') do |status|
       code = status.get('code')
 
-      next unless code.in?(['broken', 'failed', 'unresolvable'])
+      next unless code.in?(%w[broken failed unresolvable])
 
       @broken_packages << { package: status['package'],
                             project: name,
@@ -235,7 +235,7 @@ module StagingProject
     buildresult = Buildresult.find_hashed(project: name, view: 'summary', repository: current_repo['repository'], arch: current_repo['arch'])
     buildresult = buildresult.get('result').get('summary')
     buildresult.elements('statuscount') do |status_count|
-      if status_count['code'].in?(['excluded', 'broken', 'failed', 'unresolvable', 'succeeded', 'excluded', 'disabled'])
+      if status_count['code'].in?(%w[excluded broken failed unresolvable succeeded excluded disabled])
         current_repo[:final] += status_count['count'].to_i
       else
         current_repo[:tobuild] += status_count['count'].to_i
@@ -259,7 +259,7 @@ module StagingProject
     # Instead, we could have something like
     # who = review.by_group || review.by_user || review.by_project || review.by_package
 
-    [:by_group, :by_user, :by_package, :by_project].each_with_object({}) do |review_by, extracted|
+    %i[by_group by_user by_package by_project].each_with_object({}) do |review_by, extracted|
       who = review.send(review_by)
       next unless who
 

@@ -125,7 +125,7 @@ sub download_blobs {
     next if blobstore_get("_blob.$blob", $dir);
     my $tmp = "$dir/._blob.$blob.$$";
     my $authenticator = $registry_authenticators{"$url$regrepo"};
-    $authenticator = $registry_authenticators{"$url$regrepo"} = BSBearer::generate_authenticator(undef, 'verbose' => 1, 'rpccall' => \&doauthrpc) unless $authenticator;
+    $authenticator = $registry_authenticators{"$url$regrepo"} = BSBearer::generate_authenticator(undef, 'verbose' => 1, 'rpccall' => \&doauthrpc, 'proxy' => $proxy) unless $authenticator;
     my $bloburl = "${url}v2/$regrepo/blobs/$blob";
     # print "fetching: $bloburl\n";
     my $param = {'uri' => $bloburl, 'filename' => $tmp, 'receiver' => \&BSHTTP::file_receiver, 'proxy' => $proxy};
@@ -177,14 +177,9 @@ sub construct_containerinfo {
   }
   push @tags, $data->{'name'} unless @tags;
   s/^container:// for @tags;
-  my @layers = @$blobs;
-  shift @layers;
-  my $manifest = {
-    'Config' => $blobs->[0],
-    'RepoTags' => \@tags,
-    'Layers' => \@layers,
-  };
-  my $manifest_ent = BSContar::create_manifest_entry($manifest, $mtime);
+  my ($config, @layers) = @$blobs;
+  my $manifest = BSContar::create_tar_manifest_data($config, \@layers, \@tags);
+  my $manifest_ent = BSContar::create_tar_manifest_entry($manifest, $mtime);
   my $containerinfo = {
     'tar_manifest' => $manifest_ent->{'data'},
     'tar_size' => 1,	# make construct_container_tar() happy
@@ -192,12 +187,20 @@ sub construct_containerinfo {
     'tar_blobids' => $blobs,
     'name' => $pkgname,
     'version' => $data->{'version'},
+    'imageid' => $config,
     'tags' => \@tags,
     'file' => "$pkgname.tar",
   };
+  $containerinfo->{'imageid'} =~ s/^sha256://;	# like in Containertar.pm
   $containerinfo->{'release'} = $data->{'release'} if defined $data->{'release'};
   my ($tar) = BSRepServer::Containertar::construct_container_tar($dir, $containerinfo);
   ($containerinfo->{'tar_md5sum'}, $containerinfo->{'tar_sha256sum'}, $containerinfo->{'tar_size'}) = BSContar::checksum_tar($tar);
+  if ($data->{'annotation'}) {
+    my $annotation = BSUtil::fromxml($data->{'annotation'}, $BSXML::binannotation, 1) || {};
+    $containerinfo->{'registry_refname'} = $annotation->{'registry_refname'} if $annotation->{'registry_refname'};
+    $containerinfo->{'registry_digest'} = $annotation->{'registry_digest'} if $annotation->{'registry_digest'};
+    $containerinfo->{'registry_fatdigest'} = $annotation->{'registry_fatdigest'} if $annotation->{'registry_fatdigest'};
+  }
   BSRepServer::Containerinfo::writecontainerinfo("$dir/.$pkgname.containerinfo", "$dir/$pkgname.containerinfo", $containerinfo);
 
   # write obsbinlnk file (do this last!)
@@ -211,6 +214,7 @@ sub construct_containerinfo {
   BSVerify::verify_nevraquery($lnk);
   $lnk->{'hdrmd5'} = $containerinfo->{'tar_md5sum'};
   $lnk->{'path'} = "$pkgname.tar";
+  $lnk->{'annotation'} = $data->{'annotation'} if $data->{'annotation'};
   BSUtil::store("$dir/.$pkgname.obsbinlnk", "$dir/$pkgname.obsbinlnk", $lnk);
 }
 

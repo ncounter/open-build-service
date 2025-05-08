@@ -12,11 +12,11 @@ class Relationship < ApplicationRecord
   validate :check_global_role
 
   validates :project_id, uniqueness: {
-    scope: [:role_id, :group_id, :user_id], allow_nil: true,
+    scope: %i[role_id group_id user_id], allow_nil: true,
     message: 'Project has non unique id'
   }
   validates :package_id, uniqueness: {
-    scope: [:role_id, :group_id, :user_id], allow_nil: true,
+    scope: %i[role_id group_id user_id], allow_nil: true,
     message: 'Package has non unique id'
   }
 
@@ -173,7 +173,7 @@ class Relationship < ApplicationRecord
   # Relationship::AddRole#add_role handling.
   # We could also check other banned users, not only nobody.
   def allowed_user
-    raise NotFoundError, "Couldn't find user #{user.login}" if user && user.is_nobody?
+    raise NotFoundError, "Couldn't find user #{user.login}" if user && user.nobody?
   end
 
   def create_relationship_create_event

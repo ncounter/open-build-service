@@ -4,7 +4,7 @@ class SourceAttributeController < SourceController
   before_action :find_attribute_container
 
   class RemoteProject < APIError
-    setup 400, 'Attribute access to remote project is not yet supported'
+    setup 501, 'Attribute access to remote project is not yet supported'
   end
 
   class InvalidAttribute < APIError
@@ -29,7 +29,7 @@ class SourceAttributeController < SourceController
     end
 
     opts = { attrib_type: @at }.with_indifferent_access
-    [:binary, :with_default, :with_project].each { |p| opts[p] = params[p] }
+    %i[binary with_default with_project].each { |p| opts[p] = params[p] }
     render xml: @attribute_container.render_attribute_axml(opts)
   end
 
@@ -43,9 +43,7 @@ class SourceAttributeController < SourceController
 
     # checks
     raise ActiveRecord::RecordNotFound, "Attribute #{params[:attribute]} does not exist" unless attrib
-    unless User.possibly_nobody.can_create_attribute_in?(@attribute_container, @at)
-      raise ChangeAttributeNoPermission, "User #{User.possibly_nobody.login} has no permission to change attribute"
-    end
+    raise ChangeAttributeNoPermission, "User #{User.possibly_nobody.login} has no permission to change attribute" unless User.possibly_nobody.can_create_attribute_in?(@attribute_container, @at)
 
     # exec
     attrib.destroy
@@ -105,7 +103,7 @@ class SourceAttributeController < SourceController
                                                              use_source: false)
     else
       # project
-      raise RemoteProject if Project.is_remote_project?(params[:project])
+      raise RemoteProject if Project.remote_project?(params[:project])
 
       @attribute_container = Project.get_by_name(params[:project])
     end

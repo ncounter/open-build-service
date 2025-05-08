@@ -1,5 +1,3 @@
-require 'rails_helper'
-
 RSpec.describe NotificationService::Notifier do
   let(:user_bob) { create(:confirmed_user, login: 'bob') }
   let(:user_kim) { create(:confirmed_user, login: 'kim') }
@@ -19,7 +17,7 @@ RSpec.describe NotificationService::Notifier do
   describe '#call' do
     subject { NotificationService::Notifier.new(event).call }
 
-    context 'when users has rss token' do
+    context 'when users has rss secret' do
       before do
         create_bob_subscription
         create_bob_web_subscription
@@ -28,8 +26,8 @@ RSpec.describe NotificationService::Notifier do
         create_relationship_kim
         create_comment_for_project
 
-        create(:rss_token, executor: user_bob)
-        create(:rss_token, executor: user_kim)
+        user_bob.regenerate_rss_secret
+        user_kim.regenerate_rss_secret
 
         subject
       end
@@ -39,7 +37,7 @@ RSpec.describe NotificationService::Notifier do
       end
 
       it 'subscribes bob and kim to the rss notifications' do
-        expect(Notification.where(event_type: 'Event::CommentForProject').pluck(:subscriber_id)).to match_array([user_bob.id, user_kim.id])
+        expect(Notification.where(event_type: 'Event::CommentForProject').pluck(:subscriber_id)).to contain_exactly(user_bob.id, user_kim.id)
       end
 
       it 'creates one notification with rss checked for bob' do
@@ -63,7 +61,7 @@ RSpec.describe NotificationService::Notifier do
       end
     end
 
-    context "when users don't have rss token" do
+    context "when users don't have rss secret" do
       before do
         create_bob_web_subscription
         create_relationship_bob
@@ -298,6 +296,16 @@ RSpec.describe NotificationService::Notifier do
             it 'creates a new notification for the target user' do
               expect { NotificationService::Notifier.new(event).call }.to change(Notification, :count).to(1)
             end
+
+            context 'originator of the event is blocked' do
+              before do
+                BlockedUser.create(blocker: user, blocked: owner)
+              end
+
+              it 'does not create a new notification for the target user' do
+                expect { NotificationService::Notifier.new(event).call }.not_to change(Notification, :count)
+              end
+            end
           end
 
           context 'and no user is subscribed to the event' do
@@ -327,6 +335,16 @@ RSpec.describe NotificationService::Notifier do
 
             it 'creates a new notification for the target user' do
               expect { NotificationService::Notifier.new(event).call }.to change(Notification, :count).to(1)
+            end
+
+            context 'originator of the event is blocked' do
+              before do
+                BlockedUser.create(blocker: user, blocked: owner)
+              end
+
+              it 'does not create a new notification for the target user' do
+                expect { NotificationService::Notifier.new(event).call }.not_to change(Notification, :count)
+              end
             end
           end
 

@@ -11,15 +11,13 @@ class Project
       project.check_write_access!
 
       # check for raising read access permissions, which can't get ensured atm
-      unless project.new_record? || project.disabled_for?('access', nil, nil)
-        raise ForbiddenError if FlagHelper.xml_disabled_for?(xmlhash, 'access') && !User.admin_session?
-      end
-      unless project.new_record? || project.disabled_for?('sourceaccess', nil, nil)
-        raise ForbiddenError if FlagHelper.xml_disabled_for?(xmlhash, 'sourceaccess') && !User.admin_session?
-      end
+      raise ForbiddenError if !(project.new_record? || project.disabled_for?('access', nil, nil)) && FlagHelper.xml_disabled_for?(xmlhash, 'access') && !User.admin_session?
+      raise ForbiddenError if !(project.new_record? || project.disabled_for?('sourceaccess', nil, nil)) && FlagHelper.xml_disabled_for?(xmlhash, 'sourceaccess') && !User.admin_session?
+
       new_record = project.new_record?
-      if ::Configuration.default_access_disabled == true && !new_record
-        raise ForbiddenError if project.disabled_for?('access', nil, nil) && !FlagHelper.xml_disabled_for?(xmlhash, 'access') && !User.admin_session?
+      if ::Configuration.default_access_disabled == true && !new_record && project.disabled_for?('access', nil,
+                                                                                                 nil) && !FlagHelper.xml_disabled_for?(xmlhash, 'access') && !User.admin_session?
+        raise ForbiddenError
       end
 
       raise SaveError, "project name mismatch: #{project.name} != #{xmlhash['name']}" if project.name != xmlhash['name']
@@ -30,7 +28,14 @@ class Project
       project.remoteurl = xmlhash.value('remoteurl')
       project.remoteproject = xmlhash.value('remoteproject')
       project.scmsync = xmlhash.value('scmsync')
-      project.kind = xmlhash.value('kind') if xmlhash.value('kind').present?
+      project.kind = xmlhash.value('kind').presence || 'standard'
+
+      #--- update flag group ---#
+      project.update_all_flags(xmlhash)
+      if ::Configuration.default_access_disabled == true && new_record && xmlhash.elements('access').empty?
+        # write a default access disable flag by default in this mode for projects if not defined
+        project.flags.new(status: 'disable', flag: 'access')
+      end
       project.save!
 
       update_linked_projects(xmlhash)
@@ -39,14 +44,12 @@ class Project
       update_maintained_prjs_from_xml(xmlhash)
       project.update_relationships_from_xml(xmlhash)
 
-      #--- update flag group ---#
-      project.update_all_flags(xmlhash)
-      if ::Configuration.default_access_disabled == true && new_record
-        # write a default access disable flag by default in this mode for projects if not defined
-        project.flags.new(status: 'disable', flag: 'access') if xmlhash.elements('access').empty?
-      end
-
       update_repositories(xmlhash, force)
+
+      return if project.scmsync.blank?
+
+      project.revoke_requests
+      project.cleanup_packages
     end
 
     private
@@ -62,10 +65,10 @@ class Project
         link = Project.find_by_name(l['project'])
         if link.nil?
           if Project.find_remote_project(l['project'])
-            project.linking_to.create(project: project,
-                                      linked_remote_project_name: l['project'],
-                                      vrevmode: l['vrevmode'],
-                                      position: position)
+            project.linking_to.create!(project: project,
+                                       linked_remote_project_name: l['project'],
+                                       vrevmode: l['vrevmode'],
+                                       position: position)
           else
             raise SaveError, "unable to link against project '#{l['project']}'"
           end
@@ -89,11 +92,7 @@ class Project
       if devel
         prj_name = devel['project']
         if prj_name
-          begin
-            develprj = Project.get_by_name(prj_name)
-          rescue UnknownObjectError => e
-            raise UnknownObjectError, "Project with name '#{e.message}' not found"
-          end
+          develprj = Project.get_by_name(prj_name)
           raise SaveError, "value of develproject has to be a existing project (project '#{prj_name}' does not exist)" unless develprj
           raise SaveError, 'Devel project can not point to itself' if develprj == project
 
@@ -226,8 +225,8 @@ class Project
     def check_for_empty_repo_list(list, error_prefix)
       return if list.empty?
 
-      linking_repos = list.map { |x| x.repository.project.name + '/' + x.repository.name }.join("\n")
-      raise SaveError, error_prefix + "\n" + linking_repos
+      linking_repos = list.map { |x| "#{x.repository.project.name}/#{x.repository.name}" }.join("\n")
+      raise SaveError, "#{error_prefix}\n#{linking_repos}"
     end
 
     def update_repository_flags(current_repo, xml_hash)

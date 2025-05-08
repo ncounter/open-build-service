@@ -1,12 +1,10 @@
-require 'rails_helper'
-
 RSpec.describe DiffParser, type: :service do
-  let(:content) { Rails.root.join("spec/support/files/#{file}").expand_path }
+  subject { parser.call }
+
+  let(:content) { file_fixture(file.to_s) }
   let(:parser) { described_class.new(content: content) }
 
   let(:result) { result_array.map { |line| DiffParser::Line.new(content: line[0], state: line[1], index: line[2], original_index: line[3], changed_index: line[4]) } }
-
-  subject { parser.call }
 
   describe '#call' do
     context 'nil diff' do
@@ -36,7 +34,9 @@ RSpec.describe DiffParser, type: :service do
         ]
       end
 
-      it 'parses correctly' do expect(subject.lines).to eq(result) end
+      it 'parses correctly' do
+        expect(subject.lines).to eq(result)
+      end
     end
 
     context 'diff with no newline comments' do
@@ -52,7 +52,25 @@ RSpec.describe DiffParser, type: :service do
         ]
       end
 
-      it 'parses correctly' do expect(subject.lines).to eq(result) end
+      it 'parses correctly' do
+        expect(subject.lines).to eq(result)
+      end
+    end
+
+    context 'diff with highlights' do
+      let(:file) { 'diff_with_highlights.diff' }
+
+      let(:result_array) do
+        [
+          ["@@ -1,1 +1,1 @@\n", 'range', 1, nil, nil],
+          ["-bef<span class=\"inline-diff\">o</span>re\n", 'removed', 2, 1, nil],
+          ["+bef<span class=\"inline-diff\">after</span>re\n", 'added', 3, nil, 1]
+        ]
+      end
+
+      it 'parses correctly' do
+        expect(subject.lines).to eq(result)
+      end
     end
   end
 end

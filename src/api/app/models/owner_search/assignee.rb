@@ -37,7 +37,7 @@ module OwnerSearch
     end
 
     def extract_maintainer(package)
-      return unless package && Package.check_access?(package)
+      return unless package&.project&.check_access?
 
       owner = create_owner(package)
       # no filter defined, so do not check for roles and just return container
@@ -71,7 +71,7 @@ module OwnerSearch
       return package_owner if package_owner
 
       # no match, loop about projects below with this package container name
-      package.project.expand_all_projects(allow_remote_projects: false).each do |project|
+      package.project.expand_all_projects.each do |project|
         project_package = project.packages.find_by_name(package.name)
         next if project_package.nil? || @already_checked[project_package.id]
 
@@ -91,11 +91,11 @@ module OwnerSearch
       return false if binary['project'] != project.name || binary['package'].blank?
 
       package_name = binary['package']
-      package_name.gsub!(/\.[^.]*$/, '') if project.is_maintenance_release?
+      package_name.gsub!(/\.[^.]*$/, '') if project.maintenance_release?
       package_name = Package.striping_multibuild_suffix(package_name)
       package = project.packages.find_by_name(package_name)
 
-      return false if package.nil? || package.is_patchinfo?
+      return false if package.nil? || package.patchinfo?
 
       package_owner = lookup_package_owner(package)
 
@@ -114,7 +114,7 @@ module OwnerSearch
     end
 
     def find_assignees(binary_name)
-      projects = @rootproject.expand_all_projects(allow_remote_projects: false)
+      projects = @rootproject.expand_all_projects
 
       # binary search via all projects
       data = Xmlhash.parse(Backend::Api::Search.binary(projects.map(&:name), binary_name))

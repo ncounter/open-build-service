@@ -1,9 +1,8 @@
-require 'rails_helper'
-
 RSpec.describe BsRequestOverviewAvatarsComponent, type: :component do
   describe '#package_avatar_objects' do
-    let(:user) { create(:user, login: 'King') }
-    let(:review) { create(:review, by_project: package.project.name, by_package: package.name) }
+    let(:user) { create(:confirmed_user, login: 'King') }
+    let(:bs_request) { create(:bs_request_with_submit_action, creator: user) }
+    let(:review) { create(:review, by_project: package.project.name, by_package: package.name, bs_request: bs_request) }
     let(:project) { create(:project_with_package, name: 'Apache', package_name: 'apache2') }
     let(:package) { project.packages.first }
     let(:other_user) { create(:user, login: 'bob', realname: 'Bob') }
@@ -18,7 +17,7 @@ RSpec.describe BsRequestOverviewAvatarsComponent, type: :component do
         end
 
         it 'renders the maintainers of the package' do
-          expect(rendered_content).to have_selector('img[title="Bob"]', count: 1)
+          expect(rendered_content).to have_css('img[title="Bob"]', count: 1)
         end
       end
 
@@ -32,7 +31,7 @@ RSpec.describe BsRequestOverviewAvatarsComponent, type: :component do
           end
 
           it 'renders the maintainers of the project' do
-            expect(rendered_content).to have_selector('img[title="Bob"]', count: 1)
+            expect(rendered_content).to have_css('img[title="Bob"]', count: 1)
           end
         end
 
@@ -42,7 +41,7 @@ RSpec.describe BsRequestOverviewAvatarsComponent, type: :component do
           end
 
           it 'do not render a maintainer' do
-            expect(rendered_content).to have_selector('img[title="Bob"]', count: 0)
+            expect(rendered_content).to have_css('img[title="Bob"]', count: 0)
           end
         end
       end

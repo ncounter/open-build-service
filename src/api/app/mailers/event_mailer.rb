@@ -1,52 +1,38 @@
-class EventMailer < ActionMailer::Base
+class EventMailer < ApplicationMailer
   helper 'webui/markdown'
-  DefaultSender = Struct.new('DefaultSender', :email, :realname)
+  helper 'webui/reportables'
 
-  before_action :set_configuration
+  before_action :set_configuration_title
   before_action :set_recipients
-  before_action :set_default_headers
   before_action :set_event
   before_action :set_event_headers
-  before_action :set_sender
+
+  default 'X-Mailer': 'OBS Notification System',
+          Sender: email_address_with_name(::Configuration.admin_email, 'OBS Notification')
 
   def notification_email
     return if @recipients.blank? || @event.blank?
 
-    template_name = @event.template_name
     mail(to: @recipients,
-         from: email_address_with_name(@sender.email, @sender.realname),
+         from: email_address_with_name(::Configuration.admin_email, sender_realname),
          subject: @event.subject,
          date: @event.created_at) do |format|
-      format.html { render template_name, locals: { event: @event.expanded_payload } } if template_exists?("event_mailer/#{template_name}", formats: [:html])
+      format.html { render @event.template_name, locals: { event: @event.expanded_payload } } if template_exists?("event_mailer/#{@event.template_name}", formats: [:html])
 
-      format.text { render template_name, locals: { event: @event.expanded_payload } } if template_exists?("event_mailer/#{template_name}", formats: [:text])
+      format.text { render @event.template_name, locals: { event: @event.expanded_payload } } if template_exists?("event_mailer/#{@event.template_name}", formats: [:text])
     end
   end
 
   private
 
-  def set_configuration
-    @configuration = ::Configuration.first
-
-    # FIXME: This if for the view. Use action_mailer.default_url_options instead
-    # https://guides.rubyonrails.org/action_mailer_basics.html#generating-urls-in-action-mailer-views
-    @host = @configuration.obs_url
+  def set_configuration_title
+    @configuration_title = ::Configuration.title
   end
 
   def set_recipients
     return unless params[:subscribers]
 
     @recipients = params[:subscribers].map(&:display_name).compact_blank.sort
-  end
-
-  def set_default_headers
-    headers['Precedence'] = 'bulk'
-    headers['X-Mailer'] = 'OBS Notification System'
-    headers['X-OBS-URL'] = ActionDispatch::Http::URL.url_for(controller: :main, action: :index, only_path: false, host: @configuration.obs_url)
-    headers['Auto-Submitted'] = 'auto-generated'
-    headers['Return-Path'] = email_address_with_name(@configuration.admin_email, 'OBS Notification')
-    headers['Sender'] = email_address_with_name(@configuration.admin_email, 'OBS Notification')
-    headers['Message-ID'] = message_id
   end
 
   def set_event
@@ -56,19 +42,21 @@ class EventMailer < ActionMailer::Base
   def set_event_headers
     return unless @event
 
-    headers['X-OBS-event-type'] = @event.template_name
+    headers 'Message-ID': message_id,
+            'X-OBS-event-type': @event.template_name
+
     headers(@event.custom_headers)
   end
 
-  def set_sender
+  def sender_realname
     return unless @event
+    return 'OBS Notification' unless @event.originator
 
-    @sender = @event.originator
-    @sender ||= DefaultSender.new(@configuration.admin_email, 'OBS Notification') # rubocop:disable Naming/MemoizedInstanceVariableName
+    "#{@event.originator.realname} (#{@event.originator.login})"
   end
 
   def message_id
-    domain = URI.parse(@configuration.obs_url).host.downcase
+    domain = URI.parse(@host).host.downcase
     # FIXME: Stop mocking with this in code.
     #        Migrate the unit tests to RSpec and compare headers from the message object...
     content = "<notrandom@#{domain}>" if Rails.env.test?

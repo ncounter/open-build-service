@@ -23,7 +23,7 @@ class BsRequestActionMaintenanceIncident < BsRequestAction
   #### To define class methods as private use private_class_method
   #### private
   #### Instance methods (public and then protected/private)
-  def is_maintenance_incident?
+  def maintenance_incident?
     true
   end
 
@@ -33,17 +33,17 @@ class BsRequestActionMaintenanceIncident < BsRequestAction
   end
 
   def get_releaseproject(pkg, tprj)
-    return if pkg.is_patchinfo?
+    return if pkg.patchinfo?
 
     releaseproject = target_releaseproject ? Project.get_by_name(target_releaseproject) : tprj
     if releaseproject.try(:name).blank?
-      raise NoMaintenanceReleaseTarget, 'Maintenance incident request contains no defined release' \
-                                        " target project for package #{pkg.name}"
+      raise NoMaintenanceReleaseTarget, 'Maintenance incident request contains no defined release ' \
+                                        "target project for package #{pkg.name}"
     end
 
     # Automatically switch to update project
-    releaseproject = releaseproject.update_instance
-    unless releaseproject.is_maintenance_release?
+    releaseproject = releaseproject.update_instance_or_self
+    unless releaseproject.maintenance_release?
       raise NoMaintenanceReleaseTarget, 'Maintenance incident request contains release target ' \
                                         "project #{releaseproject.name} with invalid project " \
                                         "kind \"#{releaseproject.kind}\" (should be " \
@@ -58,7 +58,7 @@ class BsRequestActionMaintenanceIncident < BsRequestAction
       hash = Directory.hashed(project: source_project, package: source_package)
       return '' if hash['linkinfo'] && hash['linkinfo']['project'] == source_project
     end
-    super(opts)
+    super
   end
 
   def merge_into_maintenance_incident(incident_project)
@@ -84,9 +84,7 @@ class BsRequestActionMaintenanceIncident < BsRequestAction
     source_cleanup if sourceupdate == 'cleanup'
 
     # create a patchinfo if missing and incident has just been created
-    if opts[:check_for_patchinfo] && !incident_project.packages.joins(:package_kinds).where("kind = 'patchinfo'").exists?
-      Patchinfo.new.create_patchinfo_from_request(incident_project, bs_request)
-    end
+    Patchinfo.new.create_patchinfo_from_request(incident_project, bs_request) if opts[:check_for_patchinfo] && !incident_project.packages.joins(:package_kinds).where("kind = 'patchinfo'").exists?
 
     save
   end
@@ -100,16 +98,21 @@ class BsRequestActionMaintenanceIncident < BsRequestAction
       maintenance_project = Project.get_maintenance_project!
       self.target_project = maintenance_project.name
     end
-    unless maintenance_project.is_maintenance_incident? || maintenance_project.is_maintenance?
-      raise NoMaintenanceProject, 'Maintenance incident requests have to go to projects of type maintenance or maintenance_incident'
+    unless maintenance_project.maintenance_incident? || maintenance_project.maintenance?
+      raise NoMaintenanceProject,
+            'Maintenance incident requests have to go to projects of type maintenance or maintenance_incident'
     end
     raise IllegalRequest, 'Target package must not be specified in maintenance_incident actions' if target_package
 
-    super(ignore_build_state, ignore_delegate)
+    super
   end
 
   def name
     "Incident #{uniq_key}"
+  end
+
+  def short_name
+    "Incident #{source_package}"
   end
 
   private
@@ -157,14 +160,12 @@ class BsRequestActionMaintenanceIncident < BsRequestAction
                         project: target_releaseproject, package: package_name }
       # accept branching from former update incidents or GM (for kgraft case)
       linkprj = Project.find_by_name(linkinfo['project']) if linkinfo
-      if defined?(linkprj) && linkprj
-        if linkprj.is_maintenance_incident? || linkprj != linkprj.update_instance || kinds.include?('channel')
-          branch_params[:project] = linkinfo['project']
-          branch_params[:ignoredevel] = '1'
-        end
+      if defined?(linkprj) && linkprj && (linkprj.maintenance_incident? || linkprj != linkprj.update_instance_or_self || kinds.include?('channel'))
+        branch_params[:project] = linkinfo['project']
+        branch_params[:ignoredevel] = '1'
       end
       # it is fine to have new packages
-      branch_params[:missingok] = 1 unless Package.exists_by_project_and_name(branch_params[:project], package_name, follow_project_links: true)
+      branch_params[:missingok] = 1 unless Package.exists_by_project_and_name(branch_params[:project], package_name)
       ret = BranchPackage.new(branch_params).branch
       new_pkg = Package.get_by_project_and_name(ret[:data][:targetproject], ret[:data][:targetpackage])
 
@@ -207,7 +208,7 @@ class BsRequestActionMaintenanceIncident < BsRequestAction
     cp_params[:orev] = source_rev if source_rev
     response = Backend::Api::Sources::Package.copy(incident_project.name, new_pkg.name, source_project, source_package, User.session!.login, cp_params)
     result = Xmlhash.parse(response)
-    set_acceptinfo(result['acceptinfo'])
+    fill_acceptinfo(result['acceptinfo'])
 
     new_pkg.sources_changed
     new_pkg
@@ -237,6 +238,8 @@ end
 #  updatelink            :boolean          default(FALSE)
 #  created_at            :datetime
 #  bs_request_id         :integer          indexed, indexed => [target_package_id], indexed => [target_project_id]
+#  source_package_id     :integer          indexed
+#  source_project_id     :integer          indexed
 #  target_package_id     :integer          indexed => [bs_request_id], indexed
 #  target_project_id     :integer          indexed => [bs_request_id], indexed
 #
@@ -246,7 +249,9 @@ end
 #  index_bs_request_actions_on_bs_request_id_and_target_package_id  (bs_request_id,target_package_id)
 #  index_bs_request_actions_on_bs_request_id_and_target_project_id  (bs_request_id,target_project_id)
 #  index_bs_request_actions_on_source_package                       (source_package)
+#  index_bs_request_actions_on_source_package_id                    (source_package_id)
 #  index_bs_request_actions_on_source_project                       (source_project)
+#  index_bs_request_actions_on_source_project_id                    (source_project_id)
 #  index_bs_request_actions_on_target_package                       (target_package)
 #  index_bs_request_actions_on_target_package_id                    (target_package_id)
 #  index_bs_request_actions_on_target_project                       (target_project)

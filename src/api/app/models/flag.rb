@@ -19,7 +19,7 @@ class Flag < ApplicationRecord
 
   validate :validate_custom_save
 
-  validates :flag, uniqueness: { scope: [:project_id, :package_id, :architecture_id, :repo], case_sensitive: false }
+  validates :flag, uniqueness: { scope: %i[project_id package_id architecture_id repo], case_sensitive: false }
 
   def to_xml(builder)
     raise "FlagError: No flag-status set. \n #{inspect}" if status.nil?
@@ -47,7 +47,7 @@ class Flag < ApplicationRecord
   def validate_custom_save
     errors.add(:name, 'Please set either project or package') unless project.nil? ^ package.nil?
     errors.add(:flag, 'There needs to be a valid flag') unless FlagHelper::TYPES.key?(flag)
-    errors.add(:status, 'Status needs to be enable or disable') unless status && (status.to_sym == :enable || status.to_sym == :disable)
+    errors.add(:status, 'Status needs to be enable or disable') unless status && %i[enable disable].include?(status.to_sym)
   end
 end
 

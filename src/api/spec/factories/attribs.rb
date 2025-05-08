@@ -42,6 +42,10 @@ FactoryBot.define do
       attrib_type { AttribType.find_by_namespace_and_name!('OBS', 'OwnerRootProject') }
     end
 
+    factory :enforce_revisions_in_requests_attrib do
+      attrib_type { AttribType.find_by_namespace_and_name!('OBS', 'EnforceRevisionsInRequests') }
+    end
+
     factory :update_project_attrib do
       transient do
         update_project { nil }
@@ -68,7 +72,7 @@ FactoryBot.define do
     end
 
     factory :attrib_with_default_value do
-      attrib_type { create(:attrib_type_with_default_value) }
+      attrib_type { association :attrib_type_with_default_value }
     end
   end
 end

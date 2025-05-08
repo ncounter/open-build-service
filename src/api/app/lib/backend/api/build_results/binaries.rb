@@ -23,6 +23,11 @@ module Backend
                    params: { code: :lastfailures })
         end
 
+        # Returns the file of a package
+        def self.file(project_name, repository_name, architecture_name, package_name, file_name)
+          http_get(['/build/:project/:repository/:architecture/:package/:file', project_name, repository_name, architecture_name, package_name, file_name])
+        end
+
         # Returns the publishedpath for a file of a package
         def self.publishedpath(project_name, repository_name, package_name, architecture_name, file_name)
           http_get(['/build/:project/:repository/:architecture/:package/:file',
@@ -36,7 +41,7 @@ module Backend
           published_url = Xmlhash.parse(publishedpath(project_name, repository_name, package_name, architecture_name, file_name))['url']
           return unless published_url
 
-          return published_url if published_url.end_with?(file_name) # FIXME: bs_srcserver.published_path should not return an url in the first place...
+          published_url if published_url.end_with?(file_name) # FIXME: bs_srcserver.published_path should not return an url in the first place...
         end
 
         # Returns the RPMlint log
@@ -47,8 +52,9 @@ module Backend
 
         # special view on a binary file for details display
         # @return [Hash]
-        def self.fileinfo_ext(project_name, package_name, repository, arch, filename)
-          fileinfo = http_get(['/build/:project/:repository/:arch/:package/:filename?view=fileinfo_ext', project_name, repository, arch, package_name, filename])
+        def self.fileinfo_ext(project_name, package_name, repository, arch, filename, options = {})
+          fileinfo = http_get(['/build/:project/:repository/:arch/:package/:filename', project_name, repository, arch, package_name, filename],
+                              params: options, defaults: { view: 'fileinfo_ext' }, accepted: %i[withfilelist])
           Xmlhash.parse(fileinfo) if fileinfo
         end
 
@@ -79,14 +85,14 @@ module Backend
           return {} if repository_paths.empty? && repository_urls.empty?
 
           transform_binary_packages_response(http_get(['/build/:project/_availablebinaries', project_name],
-                                                      params: { url: repository_urls, path: repository_paths }, expand: [:url, :path]))
+                                                      params: { url: repository_urls, path: repository_paths }, expand: %i[url path]))
         end
 
         # TODO: Move this method that transforms the output into another module
         # Transforms the output of the available_in_repositories, available_in_urls and available_in_project methods to a hash containing
         # the name of the binary as keys and the architectures as the value
         def self.transform_binary_packages_response(response)
-          list = Hash.new([])
+          list = {}
           parsed_response = Xmlhash.parse(response)
           return list if parsed_response.blank?
 
@@ -94,7 +100,7 @@ module Backend
           packages.each do |build|
             architectures_names = [build['arch']].flatten
             package_names = [build['name']].flatten
-            package_names.each { |package| list[package] = architectures_names.dup.concat(list[package]).uniq }
+            package_names.each { |package| list[package] = architectures_names.dup.concat(list[package] || []).uniq }
           end
           list
         end

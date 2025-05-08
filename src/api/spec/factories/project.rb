@@ -27,8 +27,8 @@ FactoryBot.define do
     end
 
     after(:create) do |project, evaluator|
-      LinkedProject.create(project: project, linked_db_project: evaluator.link_to) if evaluator.link_to.is_a?(Project)
-      LinkedProject.create(project: project, linked_remote_project_name: evaluator.link_to) if evaluator.link_to.is_a?(String)
+      create(:linked_project, project: project, linked_db_project: evaluator.link_to) if evaluator.link_to.is_a?(Project)
+      create(:linked_project, project: project, linked_remote_project_name: evaluator.link_to) if evaluator.link_to.is_a?(String)
 
       project.config.save({ user: 'factory bot' }, evaluator.project_config) if evaluator.project_config
 
@@ -102,9 +102,11 @@ FactoryBot.define do
       end
     end
 
+    # FIXME: Repository.name and architecture should be transient
     factory :project_with_repository do
       after(:create) do |project|
         create(:repository, project: project, architectures: ['i586'])
+        project.store if CONFIG['global_write_through']
       end
     end
 
@@ -112,7 +114,7 @@ FactoryBot.define do
       kind { 'maintenance_incident' }
 
       transient do
-        maintenance_project { create(:maintenance_project) }
+        maintenance_project { create(:maintenance_project) } # rubocop:disable FactoryBot/FactoryAssociationWithStrategy
       end
 
       before(:create) do |project, evaluator|
@@ -139,8 +141,15 @@ FactoryBot.define do
       after(:create) do |project, evaluator|
         create(:maintenance_project_attrib, project: project)
         if evaluator.target_project
-          create(:maintained_project, project: evaluator.target_project, maintenance_project: project)
+          target_projects = if evaluator.target_project.is_a?(Array)
+                              evaluator.target_project
+                            else
+                              [evaluator.target_project]
+                            end
           CONFIG['global_write_through'] ? project.store : project.save!
+          target_projects.each do |tp|
+            create(:maintained_project, project: tp, maintenance_project: project)
+          end
         end
 
         evaluator.maintainer.run_as { create(:patchinfo, project_name: project.name, comment: 'Fake comment', force: true) } if evaluator.create_patchinfo
@@ -155,7 +164,7 @@ FactoryBot.define do
       kind { 'maintenance_release' }
 
       transient do
-        maintained_project { create(:project_with_repository) }
+        maintained_project { association :project_with_repository }
         maintenance_project { nil }
       end
 

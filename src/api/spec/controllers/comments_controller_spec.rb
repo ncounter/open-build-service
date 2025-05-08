@@ -1,5 +1,3 @@
-require 'rails_helper'
-
 RSpec.describe CommentsController do
   render_views
   describe 'GET #show' do
@@ -24,7 +22,7 @@ RSpec.describe CommentsController do
         get :index, format: :xml, params: { project: object }
       end
 
-      include_examples 'request comment index'
+      it_behaves_like 'request comment index'
       it { expect(response.body).to include("<comments project=\"#{object.name}\">") }
     end
 
@@ -37,7 +35,7 @@ RSpec.describe CommentsController do
         get :index, format: :xml, params: { package: object, project: object.project.name }
       end
 
-      include_examples 'request comment index'
+      it_behaves_like 'request comment index'
       it { expect(response.body).to include("<comments project=\"#{object.project.name}\" package=\"#{object.name}\">") }
     end
 
@@ -50,14 +48,14 @@ RSpec.describe CommentsController do
         get :index, format: :xml, params: { request_number: object.number }
       end
 
-      include_examples 'request comment index'
+      it_behaves_like 'request comment index'
       it { expect(response.body).to include("<comments request=\"#{object.number}\">") }
     end
 
-    context 'of a bs_request_action (inline comment)', vcr: true do
+    context 'of a bs_request_action (inline comment)', :vcr do
       let(:submit_request) { create(:bs_request_with_submit_action) }
       let(:object) { create(:bs_request_action_submit_with_diff, bs_request: submit_request) }
-      let(:comment) { create(:comment, commentable: object, diff_ref: 'diff_0_n1') }
+      let(:comment) { create(:comment, commentable: object, diff_file_index: 0, diff_line_number: 1) }
 
       before do
         login user
@@ -102,5 +100,69 @@ RSpec.describe CommentsController do
 
       it { expect(response.body).to include("<comments user=\"#{user.login}\">") }
     end
+  end
+
+  describe 'POST #create' do
+    let(:user) { create(:confirmed_user) }
+
+    before do
+      login user
+    end
+
+    context 'when commenting on a BsRequest' do
+      let(:bs_request) { create(:set_bugowner_request) }
+
+      before do
+        post :create, format: :xml, params: { request_number: bs_request.number, body: 'Something' }
+      end
+
+      it { expect(response).to have_http_status(:success) }
+    end
+
+    context 'when replying to a comment on a BsRequest' do
+      let(:bs_request) { create(:set_bugowner_request) }
+      let(:parent_comment) { create(:comment_request, commentable: bs_request) }
+
+      before do
+        post :create, format: :xml, params: { request_number: bs_request.number, body: 'Something', parent_id: parent_comment.id }
+      end
+
+      it { expect(response).to have_http_status(:success) }
+    end
+
+    context 'when replying to a comment on a BsRequestAction' do
+      let(:bs_request) { create(:set_bugowner_request) }
+      let(:bs_request_action) { bs_request.bs_request_actions.first }
+      let(:parent_comment) { create(:comment_request, commentable: bs_request_action) }
+
+      before do
+        post :create, format: :xml, params: { request_number: bs_request.number, body: 'Something', parent_id: parent_comment.id }
+      end
+
+      it { expect(response).to have_http_status(:success) }
+    end
+  end
+
+  describe 'GET #history' do
+    let(:moderator) { create(:moderator) }
+    let(:comment) { create(:comment_project) }
+
+    before do
+      with_versioning do
+        comment.update!(body: 'I edited this comment!')
+      end
+
+      login(moderator)
+
+      Flipper.enable(:content_moderation)
+      get :history, format: :xml, params: { id: comment.id }
+    end
+
+    it { expect(response.body).to include("<comment_history comment=\"#{comment.id}\">") }
+
+    it {
+      expect(response.body).to include("<comment who=\"#{comment.paper_trail.previous_version.user}\" when=\"#{comment.paper_trail.previous_version.created_at}\" " \
+                                       "id=\"#{comment.id}\">#{comment.paper_trail.previous_version.body}</comment>")
+    }
   end
 end

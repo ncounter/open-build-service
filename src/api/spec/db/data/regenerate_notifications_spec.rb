@@ -1,8 +1,9 @@
-require 'rails_helper'
 require Rails.root.join('db/data/20200326221616_regenerate_notifications.rb')
 
 RSpec.describe RegenerateNotifications, type: :migration do
   describe 'up' do
+    subject { RegenerateNotifications.new.up }
+
     let(:owner) { create(:confirmed_user, login: 'bob') }
     let(:requester) { create(:confirmed_user, login: 'ann') }
     let(:project) { create(:project, name: 'bob_project', maintainer: [owner]) }
@@ -45,10 +46,8 @@ RSpec.describe RegenerateNotifications, type: :migration do
     let!(:revoked_bs_request) { create(:bs_request, type: 'maintenance_release', state: :revoked) } # This shouldn't regenerate notification
 
     before do
-      owner.create_rss_token
+      owner.regenerate_rss_secret
     end
-
-    subject { RegenerateNotifications.new.up }
 
     context 'for RequestCreate Notifications' do
       let!(:rss_subscription) { create(:event_subscription_request_created, receiver_role: 'target_maintainer', user: owner, channel: :rss) }
@@ -73,7 +72,7 @@ RSpec.describe RegenerateNotifications, type: :migration do
       end
     end
 
-    context 'for RequesStatechange Notifications' do
+    context 'for RequestStatechange Notifications' do
       let!(:subscription) { create(:event_subscription_request_statechange, receiver_role: 'target_maintainer', user: owner, channel: :rss) }
 
       before do
@@ -126,12 +125,12 @@ RSpec.describe RegenerateNotifications, type: :migration do
       end
 
       context 'with review by project and by package' do
-        let(:reviewer_1) { create(:confirmed_user, login: 'reviewer_1') }
-        let(:package_2) { create(:package, name: 'package_2') }
-        let!(:relationship) { create(:relationship_package_user, user: reviewer_1, package: package_2) }
-        let!(:web_subscription) { create(:event_subscription_review_wanted, receiver_role: 'reviewer', user: reviewer_1, channel: :web) }
-        let!(:rss_subscription) { create(:event_subscription_review_wanted, receiver_role: 'reviewer', user: reviewer_1, channel: :rss) }
-        let!(:review_by_package) { create(:review, bs_request: review_request, by_project: package_2.project, by_package: package_2, state: :new) }
+        let(:reviewer1) { create(:confirmed_user, login: 'reviewer_1') }
+        let(:package2) { create(:package, name: 'package_2') }
+        let!(:relationship) { create(:relationship_package_user, user: reviewer1, package: package2) }
+        let!(:web_subscription) { create(:event_subscription_review_wanted, receiver_role: 'reviewer', user: reviewer1, channel: :web) }
+        let!(:rss_subscription) { create(:event_subscription_review_wanted, receiver_role: 'reviewer', user: reviewer1, channel: :rss) }
+        let!(:review_by_package) { create(:review, bs_request: review_request, by_project: package2.project, by_package: package2, state: :new) }
 
         before do
           subject

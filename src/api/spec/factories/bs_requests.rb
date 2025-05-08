@@ -15,12 +15,13 @@ FactoryBot.define do
     comment { nil }
     priority { 'moderate' }
     superseded_by { nil }
+    staging_project { nil }
 
     commenter do
       creator
     end
     creator do
-      create(:confirmed_user)
+      create(:confirmed_user) # rubocop:disable FactoryBot/FactoryAssociationWithStrategy
     end
 
     reviews do |evaluator|
@@ -76,7 +77,7 @@ FactoryBot.define do
       next unless request.staging_project && evaluator.staging_owner
 
       evaluator.staging_owner.run_as do
-        request.bs_request_actions.where(type: :submit).each do |action|
+        request.bs_request_actions.where(type: :submit).find_each do |action|
           create(:branch_package,
                  project: action.source_project,
                  package: action.source_package,
@@ -239,7 +240,7 @@ FactoryBot.define do
 
       trait :with_last_incident_accepted do
         callback(:after_create) do |instance, _evaluator|
-          admin = User.get_default_admin
+          admin = User.default_admin
           admin.run_as do
             instance.change_state(newstate: 'accepted', force: true, user: admin.login, comment: 'Accepted by admin')
           end

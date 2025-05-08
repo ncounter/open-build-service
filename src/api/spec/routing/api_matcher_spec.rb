@@ -1,5 +1,3 @@
-require 'rails_helper'
-
 RSpec.describe 'RoutesHelper::APIMatcher' do
   it { expect(get('/distributions?format=xml')).to route_to(controller: 'distributions', action: 'index', format: 'xml') }
 
@@ -56,24 +54,24 @@ RSpec.describe 'RoutesHelper::APIMatcher' do
     }
   end
 
-  include_examples '/public routes to PublicController independent of format', 'html'
-  include_examples '/public routes to PublicController independent of format', 'xml'
+  it_behaves_like '/public routes to PublicController independent of format', 'html'
+  it_behaves_like '/public routes to PublicController independent of format', 'xml'
 
   it 'routes requests to global_command_* correctly' do
     expect(post('/source?cmd=orderkiwirepos')).to route_to(
-      controller: 'source',
+      controller: 'source_command',
       action: 'global_command_orderkiwirepos',
       cmd: 'orderkiwirepos'
     )
 
     expect(post('/source?cmd=branch')).to route_to(
-      controller: 'source',
+      controller: 'source_command',
       action: 'global_command_branch',
       cmd: 'branch'
     )
 
     expect(post('/source?cmd=createmaintenanceincident')).to route_to(
-      controller: 'source',
+      controller: 'source_command',
       action: 'global_command_createmaintenanceincident',
       cmd: 'createmaintenanceincident'
     )

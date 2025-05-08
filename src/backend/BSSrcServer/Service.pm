@@ -166,6 +166,11 @@ sub commitobsscm {
     $newrev = $addrev->($cgi, $projid, $packid, $files);
   }
   BSSrcrep::writeobsscmdata($projid, $packid, $servicemark, undef);	# frees lock
+  if ($packid eq '_project') {
+    $notify_repservers->('project', $projid);
+  } else {
+    $notify_repservers->('package', $projid, $packid);
+  }
   return $newrev;
 }
 
@@ -217,9 +222,9 @@ sub addrev_service {
   BSSrcrep::addmeta_serviceerror($projid, $packid, $servicemark, $error) if $error;
   notify_serviceresult($rev, $error);
   if ($packid eq '_project') {
-    $notify_repservers->('project', $projid) unless $rev->{'rev'} eq 'obsscm' || $error;
+    $notify_repservers->('project', $projid) if $rev->{'rev'} ne 'obsscm' || $error;
   } else {
-    $notify_repservers->('package', $projid, $packid) unless $rev->{'rev'} eq 'obsscm' || $error;
+    $notify_repservers->('package', $projid, $packid) if $rev->{'rev'} ne 'obsscm' || $error;
   }
 }
 
@@ -414,10 +419,15 @@ sub doservicerpc {
     }
   };
   my $error = $@;
+  # get the error right away for obsscm runs
+  if (!$error && $rev->{'rev'} eq 'obsscm' && $newfiles{'_service_error'}) {
+    $error = readstr($newfiles{'_service_error'});
+    chomp $error;
+    $error ||= 'unknown service error';
+  }
   # create cpio archive from new service files for project obsscm service runs
   if (!$error && $rev->{'rev'} eq 'obsscm' && $packid eq '_project') {
-    $error ||= readstr($newfiles{"_service_error"}) if $newfiles{"_service_error"};
-    writeresultascpio($rev, \%newfiles) unless $error;
+    writeresultascpio($rev, \%newfiles);
   }
   # add new service files to file list
   if (!$error && !$rev->{'cpiofd'}) {

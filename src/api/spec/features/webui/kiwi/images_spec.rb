@@ -1,6 +1,6 @@
 require 'browser_helper'
 
-RSpec.describe 'Kiwi_Images', js: true, vcr: true do
+RSpec.describe 'Kiwi_Images', :js, :vcr do
   let(:user) { create(:confirmed_user, :with_home, login: 'tom') }
   let(:project) { user.home_project }
   let(:kiwi_image) { create(:kiwi_image_with_package, with_kiwi_file: true, project: project, package_name: 'package_with_kiwi_file') }
@@ -60,8 +60,8 @@ RSpec.describe 'Kiwi_Images', js: true, vcr: true do
       click_link('Add repository')
 
       within('#add-repository-') do
-        fill_in('target_project', with: project)
-        find('.ui-menu-item-wrapper', match: :first).click
+        fill_in('add_repo_kiwi_target_project', with: project)
+        first('.ui-menu-item-wrapper').click
         click_link('Continue')
       end
 
@@ -69,7 +69,7 @@ RSpec.describe 'Kiwi_Images', js: true, vcr: true do
 
       within('#add-package') do
         fill_in('Name', with: 'perl')
-        find('.ui-menu-item-wrapper', match: :first).click
+        first('.ui-menu-item-wrapper').click
         click_link('Continue')
       end
 
@@ -93,8 +93,8 @@ RSpec.describe 'Kiwi_Images', js: true, vcr: true do
       click_link('Add repository')
 
       within('#add-repository-') do
-        fill_in('target_project', with: project)
-        find('.ui-menu-item-wrapper', match: :first).click
+        fill_in('add_repo_kiwi_target_project', with: project)
+        first('.ui-menu-item-wrapper').click
         click_link('Continue')
       end
 
@@ -125,8 +125,8 @@ RSpec.describe 'Kiwi_Images', js: true, vcr: true do
       click_link('Add repository')
 
       within('#add-repository-') do
-        fill_in('target_project', with: project)
-        find('.ui-menu-item-wrapper', match: :first).click
+        fill_in('add_repo_kiwi_target_project', with: project)
+        first('.ui-menu-item-wrapper').click
         click_link('Continue')
       end
 
@@ -134,7 +134,7 @@ RSpec.describe 'Kiwi_Images', js: true, vcr: true do
 
       within('#add-package') do
         fill_in('Name', with: 'perl')
-        find('.ui-menu-item-wrapper', match: :first).click
+        first('.ui-menu-item-wrapper').click
         click_link('Continue')
       end
 

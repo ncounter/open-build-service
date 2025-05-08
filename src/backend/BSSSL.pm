@@ -94,6 +94,34 @@ sub tossl {
   tie(*{\*S}, 'BSSSL', \*S, @_);
 }
 
+sub ssl_iseof {
+  my ($ssl, $noselect, $socket) = @_;
+  my $fn = Net::SSLeay::get_fd($ssl);
+  return 0 unless defined $fn;
+  if (!$noselect) {
+    my $vec = '';
+    vec($vec, $fn, 1) = 1;
+    my $r = select($vec, undef, undef, 0);
+    if (!defined($r) || $r < 0) {
+      warn("select: $!\n");
+      return 1;
+    }
+    return 0 unless $r;
+  }
+  # sigh. we need to find a better way to call recv on the file descriptor
+  my $fd = $socket;
+  return 0 unless $fd || open($fd, '<&', $fn);
+  my $buf = '';
+  my $r = recv($fd, $buf, 1, Socket::MSG_PEEK());
+  if (!defined($r)) {
+    warn("recv: $!\n");
+    close($fd) unless $socket;
+    return 1;
+  }
+  close($fd) unless $socket;
+  return length($buf) ? 0 : 1;
+}
+
 # this assumes the socket is in non-block mode
 sub ssl_connect_with_timeout {
   my ($ssl, $socket, $timeout) = @_;
@@ -110,6 +138,7 @@ sub ssl_connect_with_timeout {
       $r = select(undef, $vec, undef, $timeout - $now);
     } elsif ($code == &Net::SSLeay::ERROR_WANT_READ) {
       $r = select($vec, undef, undef, $timeout - $now);
+      die("SSL_connect EOF\n") if $r && ssl_iseof($ssl, 1, $socket);
     } else {
       die_with_error_stack("SSL_connect error ($code)");
     }
@@ -179,8 +208,9 @@ sub READ {
   my $buf = \$_[1];
   $! = 0;
   my ($r, $rv)  = Net::SSLeay::read($sslr->[0]);
-  if ($rv && $rv < 0) {
+  if ($rv <= 0) {
     my $code = Net::SSLeay::get_error($sslr->[0], $rv);
+    return 0 if $code == &Net::SSLeay::ERROR_WANT_READ && ssl_iseof($sslr->[0]);
     $! = POSIX::EINTR if $code == &Net::SSLeay::ERROR_WANT_READ || $code == &Net::SSLeay::ERROR_WANT_WRITE;
   }
   return undef unless defined $r;
@@ -199,7 +229,7 @@ sub WRITE {
   if ($rv <= 0) {
     my $code = Net::SSLeay::get_error($sslr->[0], $rv);
     $! = POSIX::EINTR if $code == &Net::SSLeay::ERROR_WANT_READ || $code == &Net::SSLeay::ERROR_WANT_WRITE;
-    return -1;
+    return undef;
   }
   return $rv;
 }
@@ -215,16 +245,14 @@ sub CLOSE {
     untie($sslr->[1]);
     close($sslr->[1]);
   } else {
-    Net::SSLeay::free($sslr->[0]);
-    undef $sslr->[0];
+    Net::SSLeay::free(splice(@$sslr, 0, 1, undef));
   }
   undef $sslr->[1];
 }
 
 sub UNTIE {
   my ($sslr) = @_;
-  Net::SSLeay::free($sslr->[0]);
-  undef $sslr->[0];
+  Net::SSLeay::free(splice(@$sslr, 0, 1, undef));
 }
 
 sub DESTROY {
@@ -235,12 +263,11 @@ sub DESTROY {
 sub data_available {
   my ($sslr) = @_;
   my ($r, $rv) = Net::SSLeay::peek($sslr->[0], 1);
-  if ($rv && $rv < 0) {
+  if ($rv <= 0) {
     my $code = Net::SSLeay::get_error($sslr->[0], $rv);
     return 0 if $code == &Net::SSLeay::ERROR_WANT_READ || $code == &Net::SSLeay::ERROR_WANT_WRITE;
-    return undef;
   }
-  return defined($r) ? 1 : 0;
+  return defined($r) ? 1 : undef;
 }
 
 sub peerfingerprint {

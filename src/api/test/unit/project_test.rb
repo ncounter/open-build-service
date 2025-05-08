@@ -11,11 +11,11 @@ class ProjectTest < ActiveSupport::TestCase
 
   def test_maintained_project_names
     project = Project.create(name: 'Z')
-    ['A', 'B', 'C'].each do |project_name|
+    %w[A B C].each do |project_name|
       project.maintained_projects.create(project: Project.create(name: project_name))
     end
 
-    assert_equal ['A', 'B', 'C'], project.maintained_project_names
+    assert_equal %w[A B C], project.maintained_project_names
   end
 
   def test_flags_to_axml
@@ -60,7 +60,7 @@ class ProjectTest < ActiveSupport::TestCase
     )
 
     position = 1
-    ['build', 'publish', 'debuginfo'].each do |flagtype|
+    %w[build publish debuginfo].each do |flagtype|
       position = @project.update_flags(axml, flagtype, position)
     end
 
@@ -281,7 +281,7 @@ class ProjectTest < ActiveSupport::TestCase
     User.session = users(:Iggy)
     orig = @project.render_xml
 
-    xml = <<~END
+    xml = <<~PROJECT
       <project name="home:Iggy">
         <title>Iggy"s Home Project</title>
         <description>dummy</description>
@@ -294,7 +294,7 @@ class ProjectTest < ActiveSupport::TestCase
           <arch>x86_64</arch>
         </repository>
       </project>
-    END
+    PROJECT
     axml = Xmlhash.parse(xml)
     assert_raise(ActiveRecord::RecordInvalid) do
       Project.transaction do
@@ -307,7 +307,7 @@ class ProjectTest < ActiveSupport::TestCase
 
   test 'not duplicated repos with remote' do
     User.session = users(:Iggy)
-    xml = <<~END
+    xml = <<~PROJECT
       <project name="home:Iggy">
         <title>Iggy"s Home Project</title>
         <description>dummy</description>
@@ -322,7 +322,7 @@ class ProjectTest < ActiveSupport::TestCase
           <arch>i586</arch>
         </repository>
       </project>
-    END
+    PROJECT
     axml = Xmlhash.parse(xml)
     Project.transaction do
       @project.update_from_xml!(axml)
@@ -370,6 +370,36 @@ class ProjectTest < ActiveSupport::TestCase
     xml_string = project_b.to_axml
     assert_no_xml_tag xml_string, tag: :link
     project_b.destroy
+  end
+
+  def test_setting_project_kind
+    User.session = users(:king)
+    prj = Project.create!(name: 'project_1')
+    prj.update_from_xml!(Xmlhash.parse(
+                           "<project name='project_1' kind='maintenance_release'>
+                             <title/>
+                             <description/>
+                           </project>"
+                         ))
+    xml = prj.to_axml
+
+    assert_xml_tag xml, tag: :project, attributes: { kind: 'maintenance_release' }
+    prj.destroy
+  end
+
+  def test_remove_project_kind
+    User.session = users(:king)
+    prj = Project.create!(name: 'project_1', kind: 'maintenance_release')
+    prj.update_from_xml!(Xmlhash.parse(
+                           "<project name='project_1'>
+                             <title/>
+                             <description/>
+                           </project>"
+                         ))
+    xml = prj.to_axml
+
+    assert_no_xml_tag xml, tag: :project, attributes: { kind: 'maintenance_release' }
+    prj.destroy
   end
 
   def test_repository_with_download_url
@@ -557,34 +587,18 @@ class ProjectTest < ActiveSupport::TestCase
 
   def test_cycle_handling
     User.session = users(:king)
+    prj_a = Project.create!(name: 'Project:A')
+    prj_b = Project.create!(name: 'Project:B')
 
-    prj_a = Project.new(name: 'Project:A')
-    prj_a.update_from_xml!(Xmlhash.parse(
-                             "<project name='Project:A'>
-                               <title/>
-                               <description/>
-                             </project>"
-                           ))
-    prj_a.save!
-    prj_b = Project.new(name: 'Project:B')
-    prj_b.update_from_xml!(Xmlhash.parse(
-                             "<project name='Project:B'>
-                               <title/>
-                               <description/>
-                               <link project='Project:A'/>
-                             </project>"
-                           ))
-    prj_b.save!
-    prj_a.update_from_xml!(Xmlhash.parse(
-                             "<project name='Project:A'>
-                               <title/>
-                               <description/>
-                               <link project='Project:B'/>
-                             </project>"
-                           ))
-    prj_a.save!
+    # Link prj_b to prj_a
+    prj_b.linking_to.create!(linked_db_project: prj_a)
+    # Link prj_a to prj_b, an invalid LinkedProject with a link cycle
+    LinkedProject.new(project: prj_a, linked_db_project: prj_b, position: 1).save(validate: false)
+    prj_a = prj_a.reload
 
+    # test the cycle protection in expand_all_packages
     assert_equal [], prj_a.expand_all_packages
+    # test the cycle protection in expand_all_projects
     assert_equal 2,  prj_a.expand_all_projects.length
   end
 

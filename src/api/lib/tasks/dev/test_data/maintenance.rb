@@ -17,7 +17,7 @@
 module TestData
   module Maintenance
     def create_maintained_project(project_name)
-      admin = User.get_default_admin
+      admin = User.default_admin
       maintained_project = create(:project, name: project_name)
       create(:repository, project: maintained_project, name: 'openSUSE_Tumbleweed', architectures: ['x86_64'])
       create(:package_with_file, name: 'cacti', project: maintained_project, file_name: 'README.txt', file_content: 'Original content', commit_user: admin)
@@ -27,7 +27,7 @@ module TestData
     end
 
     def create_maintenance_project
-      admin = User.get_default_admin
+      admin = User.default_admin
 
       create(
         :maintenance_project,
@@ -39,7 +39,7 @@ module TestData
     end
 
     def create_update_project(maintained_project:, maintenance_project:)
-      admin = User.get_default_admin
+      admin = User.default_admin
 
       # Update Project is a link to the Maintained Project
       create(:update_project,
@@ -99,7 +99,7 @@ module TestData
 
     def create_request_with_maintenance_release_actions(source_project_name:, package_names:, target_project_names:)
       # Common users like Iggy don't have permission to modify openSUSE:Maintenance:0
-      admin = User.get_default_admin
+      admin = User.default_admin
 
       bs_request = create(:bs_request_with_maintenance_release_actions,
                           creator: admin,
@@ -148,7 +148,7 @@ module TestData
              :with_patchinfo,
              creator: iggy,
              description: 'Request with incident actions',
-             source_package_names: ['cacti', 'cacti-spine'],
+             source_package_names: %w[cacti cacti-spine],
              target_releaseproject_names: [update_project1.name, update_project2.name],
              source_project_name: update_project_branch.name,
              target_project_name: maintenance_project).tap do |bs_request|
@@ -161,7 +161,7 @@ module TestData
              :with_last_incident_accepted,
              creator: iggy,
              description: 'Request with incident actions',
-             source_package_names: ['cacti', 'cacti-spine'],
+             source_package_names: %w[cacti cacti-spine],
              target_releaseproject_names: [update_project1.name, update_project2.name],
              source_project_name: update_project_branch.name,
              target_project_name: maintenance_project).tap do |bs_request|
@@ -182,7 +182,7 @@ module TestData
 
       # Create maintenance release request that asks for releasing the changes on openSUSE:Maintenance:0 to openSUSE:*:Update.
       create_request_with_maintenance_release_actions(source_project_name: 'openSUSE:Maintenance:0',
-                                                      package_names: ['cacti', 'cacti-spine'],
+                                                      package_names: %w[cacti cacti-spine],
                                                       target_project_names: [update_project1.name, update_project2.name])
     end
   end

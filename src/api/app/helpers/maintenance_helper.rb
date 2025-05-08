@@ -29,6 +29,7 @@ module MaintenanceHelper
         link = Nokogiri::XML(link, &:strict).root
         links_to_source = link['project'].nil? || link['project'] == source_package.project.name
       rescue Backend::Error
+        # Ignore this exception on purpose
       end
     end
     if links_to_source
@@ -76,16 +77,14 @@ module MaintenanceHelper
             end
 
     # create or update main package linking to incident package
-    release_package_create_main_package(action.bs_request, source_package, target_package_name, target_project) unless source_package.is_patchinfo? || manual
+    release_package_create_main_package(action.bs_request, source_package, target_package_name, target_project) unless source_package.patchinfo? || manual
 
     # publish incident if source is read protect, but release target is not. assuming it got public now.
     f = source_package.project.flags.find_by_flag_and_status('access', 'disable')
-    if f
-      unless target_project.flags.find_by_flag_and_status('access', 'disable')
-        source_package.project.flags.delete(f)
-        source_package.project.store(comment: 'project becomes public on release action')
-        # patchinfos stay unpublished, it is anyway too late to test them now ...
-      end
+    if f && !target_project.flags.find_by_flag_and_status('access', 'disable')
+      source_package.project.flags.delete(f)
+      source_package.project.store(comment: 'project becomes public on release action')
+      # patchinfos stay unpublished, it is anyway too late to test them now ...
     end
 
     # release the scheduler lock
@@ -110,7 +109,7 @@ module MaintenanceHelper
     }
     upload_params[:requestid] = action.bs_request.number if action
     upload_path = Addressable::URI.escape("/source/#{target_project.name}/#{target_package_name}")
-    upload_path << Backend::Connection.build_query_from_hash(upload_params, [:user, :comment, :cmd, :noservice, :requestid])
+    upload_path << Backend::Connection.build_query_from_hash(upload_params, %i[user comment cmd noservice requestid])
     answer = Backend::Connection.post upload_path, "<directory> <entry name=\"_link\" md5=\"#{md5}\" /> </directory>"
     tpkg.sources_changed(dir_xml: answer)
   end
@@ -133,7 +132,7 @@ module MaintenanceHelper
       comment: "Set link to #{target_package_name} via maintenance_release request"
     }
     upload_path = Addressable::URI.escape("/source/#{target_project.name}/#{base_package_name}/_link")
-    upload_path << Backend::Connection.build_query_from_hash(upload_params, [:user, :rev])
+    upload_path << Backend::Connection.build_query_from_hash(upload_params, %i[user rev])
     link = "<link package='#{target_package_name}' cicount='copy' />\n"
     md5 = Digest::MD5.hexdigest(link)
     Backend::Connection.put upload_path, link
@@ -142,7 +141,7 @@ module MaintenanceHelper
     upload_params[:noservice] = '1'
     upload_params[:requestid] = request.number if request
     upload_path = Addressable::URI.escape("/source/#{target_project.name}/#{base_package_name}")
-    upload_path << Backend::Connection.build_query_from_hash(upload_params, [:user, :comment, :cmd, :noservice, :requestid])
+    upload_path << Backend::Connection.build_query_from_hash(upload_params, %i[user comment cmd noservice requestid])
     answer = Backend::Connection.post upload_path, "<directory> <entry name=\"_link\" md5=\"#{md5}\" /> </directory>"
     lpkg.sources_changed(dir_xml: answer)
   end
@@ -162,22 +161,20 @@ module MaintenanceHelper
       withacceptinfo: '1'
     }
     cp_params[:requestid] = action.bs_request.number if action
-    if target_project.is_maintenance_release? && source_package.is_link?
-      # no permission check here on purpose
-      if source_package.linkinfo['project'] == target_project.name &&
-         source_package.linkinfo['package'] == target_package_name.gsub(/\.[^.]*$/, '')
-        # link target is equal to release target. So we freeze our link.
-        cp_params[:freezelink] = 1
-      end
+    # no permission check here on purpose
+    if target_project.maintenance_release? && source_package.link? && source_package.linkinfo['project'] == target_project.name &&
+       source_package.linkinfo['package'] == target_package_name.gsub(/\.[^.]*$/, '')
+      # link target is equal to release target. So we freeze our link.
+      cp_params[:freezelink] = 1
     end
     cp_path = Addressable::URI.escape("/source/#{target_project.name}/#{target_package_name}")
-    cp_path << Backend::Connection.build_query_from_hash(cp_params, [:cmd, :user, :oproject,
-                                                                     :opackage, :comment, :requestid,
-                                                                     :expand, :withvrev, :noservice,
-                                                                     :freezelink, :withacceptinfo])
+    cp_path << Backend::Connection.build_query_from_hash(cp_params, %i[cmd user oproject
+                                                                       opackage comment requestid
+                                                                       expand withvrev noservice
+                                                                       freezelink withacceptinfo])
     result = Backend::Connection.post(cp_path)
     result = Xmlhash.parse(result.body)
-    action.set_acceptinfo(result['acceptinfo']) if action
+    action.fill_acceptinfo(result['acceptinfo']) if action
   end
 
   def copy_binaries(filter_source_repository, filter_architecture, source_package, target_package_name,
@@ -242,14 +239,14 @@ module MaintenanceHelper
     cp_params[:multibuild] = '1' unless source_package_name.include?(':')
     cp_path = Addressable::URI.escape("/build/#{target_repository.project.name}/#{target_repository.name}/#{arch.name}/#{target_package_name}")
 
-    cp_path << Backend::Connection.build_query_from_hash(cp_params, [:cmd, :oproject, :opackage,
-                                                                     :orepository, :setupdateinfoid,
-                                                                     :resign, :setrelease, :multibuild])
+    cp_path << Backend::Connection.build_query_from_hash(cp_params, %i[cmd oproject opackage
+                                                                       orepository setupdateinfoid
+                                                                       resign setrelease multibuild])
     Backend::Connection.post cp_path
   end
 
   def get_updateinfo_id(source_package, target_repo)
-    return unless source_package.is_patchinfo?
+    return unless source_package.patchinfo?
 
     # check for patch name inside of _patchinfo file
     xml = Patchinfo.new.read_patchinfo_xmlhash(source_package)
@@ -267,7 +264,7 @@ module MaintenanceHelper
     # expand a possible defined update info template in release target of channel
     project_filter = nil
     prj = source_package.project.parent
-    project_filter = prj.maintained_projects.map(&:project) if prj && prj.is_maintenance?
+    project_filter = prj.maintained_projects.map(&:project) if prj && prj.maintenance?
     # prefer a channel in the source project to avoid double hits exceptions
     cts = ChannelTarget.find_by_repo(target_repo, [source_package.project])
     cts = ChannelTarget.find_by_repo(target_repo, project_filter) unless cts.any?
@@ -278,7 +275,7 @@ module MaintenanceHelper
     end
     id_template = cts.first.id_template if cts.first && cts.first.id_template
 
-    mi.getUpdateinfoId(id_template, patch_name)
+    mi.get_updateinfo_id(id_template, patch_name)
   end
 
   def create_package_container_if_missing(source_package, target_package_name, target_project)
@@ -291,7 +288,7 @@ module MaintenanceHelper
                          title: source_package.title,
                          description: source_package.description)
       target_project.packages << tpkg
-      if source_package.is_patchinfo?
+      if source_package.patchinfo?
         # publish patchinfos only
         tpkg.flags.create(flag: 'publish', status: 'enable')
       end
@@ -329,7 +326,7 @@ module MaintenanceHelper
   def instantiate_container(project, opackage, opts = {})
     opkg = opackage.origin_container
     pkg_name = opkg_name = opkg.name
-    if opkg.is_a?(Package) && opkg.project.is_maintenance_release?
+    if opkg.is_a?(Package) && opkg.project.maintenance_release?
       # strip incident suffix
       pkg_name = opkg.name.gsub(/\.[^.]*$/, '')
     end
@@ -340,7 +337,7 @@ module MaintenanceHelper
     local_linked_packages = {}
     opkg.find_project_local_linking_packages.each do |p|
       lpkg_name = p.name
-      if opkg_name != pkg_name && p.is_a?(Package) && p.project.is_maintenance_release?
+      if opkg_name != pkg_name && p.is_a?(Package) && p.project.maintenance_release?
         # strip incident suffix
         lpkg_name = p.name.gsub(/\.[^.]*$/, '')
         # skip the base links
@@ -348,7 +345,9 @@ module MaintenanceHelper
       end
       raise PackageAlreadyExists, "package #{p.name} already exists" if Package.exists_by_project_and_name(project.name, lpkg_name, follow_project_links: false)
 
-      local_linked_packages[lpkg_name] = p
+      # only create local link when it also exists in source project
+      # avoid cases with dot's in the package name (eg. go1.19)
+      local_linked_packages[lpkg_name] = p if Package.exists_by_project_and_name(p.project.name, lpkg_name)
     end
 
     pkg = project.packages.create(name: pkg_name, title: opkg.title, description: opkg.description)
@@ -378,9 +377,9 @@ module MaintenanceHelper
       copyopts[:comment]  = 'initialize package as branch'
     end
     path = pkg.source_path
-    path << Backend::Connection.build_query_from_hash(copyopts, [:user, :comment, :cmd, :noservice, :requestid,
-                                                                 :makeoriginolder, :withvrev, :vrevbump,
-                                                                 :instantiate, :oproject, :opackage])
+    path << Backend::Connection.build_query_from_hash(copyopts, %i[user comment cmd noservice requestid
+                                                                   makeoriginolder withvrev vrevbump
+                                                                   instantiate oproject opackage])
     Backend::Connection.post(path)
     pkg.sources_changed
 
@@ -395,8 +394,8 @@ module MaintenanceHelper
       copyopts[:cmd] = 'copy'
       copyopts[:oproject] = p.project.name
       copyopts[:opackage] = p.name
-      path << Backend::Connection.build_query_from_hash(copyopts, [:user, :cmd, :noservice, :requestid,
-                                                                   :oproject, :opackage])
+      path << Backend::Connection.build_query_from_hash(copyopts, %i[user cmd noservice requestid
+                                                                     oproject opackage])
       Backend::Connection.post path
       # and fix the link
       link_xml = Nokogiri::XML(lpkg.source_file('_link'), &:strict).root

@@ -2,7 +2,13 @@
 # environment and review apps to test changes for those features. Rolled-out feature toggles aren't displayed anyway
 # to users in the web UI for beta features.
 ENABLED_FEATURE_TOGGLES = [
-  { name: :request_show_redesign, description: 'Redesign of the request pages to improve the collaboration workflow' }
+  { name: :request_show_redesign, description: 'Redesign of the request pages to improve the collaboration workflow' },
+  { name: :content_moderation, description: 'Reporting inappropriate content' },
+  { name: :color_themes, description: 'Color themes' },
+  { name: :foster_collaboration, description: 'Features improving the collaboration opportunities between users of the build service.' },
+  { name: :labels, description: 'Allow to apply labels to packages, submit requests and projects to improve collaboration between build service users.' },
+  { name: :request_index, description: 'Redesign of listing requests' },
+  { name: :canned_responses, description: 'Create messages using templates' }
 ].freeze
 
 Flipper.configure do
@@ -11,7 +17,7 @@ Flipper.configure do
   # store anything in database.
 
   Flipper.register(:staff) do |user|
-    user.respond_to?(:is_staff?) && user.is_staff?
+    user.respond_to?(:staff?) && user.staff?
   end
 
   Flipper.register(:beta) do |user|

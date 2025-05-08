@@ -1,21 +1,20 @@
-class Workflow
+class Workflow # rubocop:disable Metrics/ClassLength
   include ActiveModel::Model
   include WorkflowInstrumentation # for run_callbacks
   include WorkflowVersionMatcher
 
-  SCM_CI_DOCUMENTATION_URL = 'https://openbuildservice.org/help/manuals/obs-user-guide/cha.obs.scm_ci_workflow_integration.html'.freeze
+  SCM_CI_DOCUMENTATION_URL = 'https://openbuildservice.org/help/manuals/obs-user-guide/cha-obs-scm-ci-workflow-integration'.freeze
 
   SUPPORTED_STEPS = {
     branch_package: Workflow::Step::BranchPackageStep, link_package: Workflow::Step::LinkPackageStep,
     configure_repositories: Workflow::Step::ConfigureRepositories, rebuild_package: Workflow::Step::RebuildPackage,
-    set_flags: Workflow::Step::SetFlags, trigger_services: Workflow::Step::TriggerServices
+    set_flags: Workflow::Step::SetFlags, trigger_services: Workflow::Step::TriggerServices,
+    submit_request: Workflow::Step::SubmitRequest
   }.freeze
 
-  SUPPORTED_FILTERS = [:branches, :event].freeze
-  STEPS_WITH_NO_TARGET_PROJECT_TO_RESTORE_OR_DESTROY = [Workflow::Step::ConfigureRepositories, Workflow::Step::RebuildPackage,
-                                                        Workflow::Step::SetFlags, Workflow::Step::TriggerServices].freeze
+  SUPPORTED_FILTERS = %i[branches event labels].freeze
 
-  attr_accessor :workflow_instructions, :scm_webhook, :token, :workflow_run, :workflow_version_number
+  attr_accessor :workflow_instructions, :token, :workflow_run, :workflow_version_number
 
   def initialize(attributes = {})
     run_callbacks(:initialize) do
@@ -32,33 +31,21 @@ class Workflow
 
   def call
     run_callbacks(:call) do
-      return unless event_matches_event_filter?
-      return unless branch_matches_branches_filter?
+      return unless filters_match?
 
-      case
-      when scm_webhook.closed_merged_pull_request?
-        destroy_target_projects
-      when scm_webhook.reopened_pull_request?
-        restore_target_projects
-      when scm_webhook.new_pull_request?, scm_webhook.updated_pull_request?, scm_webhook.push_event?, scm_webhook.tag_push_event?
-        steps.each do |step|
-          call_step_and_collect_artifacts(step)
-        end
+      steps.each do |step|
+        # ArtifactsCollector can only be called if the step.call doesn't return nil because of a validation error
+        step.call && Workflows::ArtifactsCollector.new(step: step, workflow_run_id: workflow_run.id).call
       end
     end
   end
 
   def event_supports_branches_filter?
     # Tags do not have a reference to a branch, they are referring to a commit
-    return false unless @workflow_instructions.dig(:filters, :branches).present? && scm_webhook.tag_push_event?
+    return false unless @workflow_instructions.dig(:filters, :branches).present? && workflow_run.tag_push_event?
 
     errors.add(:filters, 'for branches are not supported for the tag push event. ' \
                          "Documentation for filters: #{WorkflowFiltersValidator::DOCUMENTATION_LINK}")
-  end
-
-  # ArtifactsCollector can only be called if the step.call doesn't return nil because of a validation error
-  def call_step_and_collect_artifacts(step)
-    step.call && Workflows::ArtifactsCollector.new(step: step, workflow_run_id: workflow_run.id).call
   end
 
   def steps
@@ -89,7 +76,6 @@ class Workflow
 
   def initialize_step(step_name, step_instructions)
     SUPPORTED_STEPS[step_name].new(step_instructions: step_instructions,
-                                   scm_webhook: scm_webhook,
                                    token: token,
                                    workflow_run: workflow_run)
   end
@@ -103,13 +89,13 @@ class Workflow
 
     case filters[:event]
     when 'push'
-      scm_webhook.push_event?
+      workflow_run.push_event?
     when 'tag_push'
-      scm_webhook.tag_push_event?
+      workflow_run.tag_push_event?
     when 'pull_request'
-      scm_webhook.pull_request_event?
+      workflow_run.pull_request_event?
     when 'merge_request'
-      scm_webhook.pull_request_event? && feature_available_for_workflow_version?(workflow_version: workflow_version_number, feature_name: 'event_aliases')
+      workflow_run.pull_request_event? && feature_available_for_workflow_version?(workflow_version: workflow_version_number, feature_name: 'event_aliases')
     else
       false
     end
@@ -118,47 +104,40 @@ class Workflow
   def branch_matches_branches_filter?
     return true unless supported_filters.key?(:branches)
 
-    branches_only = filters[:branches].fetch(:only, [])
-    branches_ignore = filters[:branches].fetch(:ignore, [])
+    return true if branch_matches_branches_only_filter?
 
-    return true if branches_only.present? && branches_only.include?(scm_webhook.payload[:target_branch])
-    return true if branches_ignore.present? && branches_ignore.exclude?(scm_webhook.payload[:target_branch])
+    return true if branch_matches_branches_ignore_filter?
 
     false
   end
 
-  # TODO: Extract this into a service
-  def destroy_target_projects
-    # Do not process steps for which there's nothing to do
-    processable_steps = steps.reject { |step| step.class.in?(STEPS_WITH_NO_TARGET_PROJECT_TO_RESTORE_OR_DESTROY) }
-    target_packages = processable_steps.map(&:target_package).uniq.compact
-    EventSubscription.where(channel: 'scm', token: token, package: target_packages).delete_all
-
-    target_project_names = processable_steps.map(&:target_project_name).uniq.compact
-
-    begin
-      Project.where(name: target_project_names).destroy_all
-    rescue Project::Errors::UnknownObjectError, Pundit::NotAuthorizedError => e
-      workflow_run.update_as_failed(e.message)
-      raise e
-    end
+  def branch_matches_branches_only_filter?
+    branches_only = filters[:branches].fetch(:only, []).map(&:to_s)
+    branches_only.present? && branches_only.include?(workflow_run.target_branch)
   end
 
-  # TODO: Extract this into a service
-  def restore_target_projects
-    token_user_login = token.executor.login
+  def branch_matches_branches_ignore_filter?
+    branches_ignore = filters[:branches].fetch(:ignore, []).map(&:to_s)
+    branches_ignore.present? && branches_ignore.exclude?(workflow_run.target_branch)
+  end
 
-    # Do not process steps for which there's nothing to do
-    processable_steps = steps.reject { |step| step.class.in?(STEPS_WITH_NO_TARGET_PROJECT_TO_RESTORE_OR_DESTROY) }
-    target_project_names = processable_steps.map(&:target_project_name).uniq.compact
-    target_project_names.each do |target_project_name|
-      Project.restore(target_project_name, user: token_user_login)
-    end
+  # rubocop:disable Metrics/CyclomaticComplexity
+  # Execute only if labeled or unlabeled
+  def label_matches_labels_filter?
+    return true unless workflow_run.labeled_pull_request? || workflow_run.unlabeled_pull_request?
+    return true unless supported_filters.key?(:labels)
 
-    target_packages = processable_steps.map(&:target_package).uniq.compact
-    target_packages.each do |target_package|
-      # FIXME: We shouldn't rely on a workflow step to be able to create/update subscriptions
-      processable_steps.first.create_or_update_subscriptions(target_package)
-    end
+    labels_only = filters[:labels].fetch(:only, [])
+    labels_ignore = filters[:labels].fetch(:ignore, [])
+
+    return true if labels_only.present? && labels_only.include?(workflow_run.label)
+    return true if labels_ignore.present? && labels_ignore.exclude?(workflow_run.label)
+
+    false
+  end
+  # rubocop:enable Metrics/CyclomaticComplexity
+
+  def filters_match?
+    event_matches_event_filter? && branch_matches_branches_filter? && label_matches_labels_filter?
   end
 end

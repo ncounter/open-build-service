@@ -301,6 +301,8 @@ sub check {
   my $projpacks = $gctx->{'projpacks'};
   my %unneeded_na;
   my %archs = map {$_ => 1} @archs;
+  my $dobuildinfo = $ctx->{'dobuildinfo'};
+
   for my $aprp (@aprps) {
     my %seen_fn;	# resolve file conflicts in this prp
     my %known;
@@ -483,6 +485,16 @@ sub check {
 	  push @next_unneeded_na, $na unless $ba eq 'src' || $ba eq 'nosrc';
 	}
 
+	# our buildinfo data also includes special files like appdata
+	if ($dobuildinfo) {
+	  for my $fn (@bi) {
+            next unless $fn =~ (/[-.]appdata\.xml$/) || $fn eq '_modulemd.yaml';
+	    next if $seen_fn{$fn};
+	    push @rpms, "$aprp/$arch/$apackid/$fn";
+	    $seen_fn{$fn} = 1 unless $fn eq '_modulemd.yaml';	# we expect the modulemd file to be renamed
+	  }
+	}
+
 	# check if we are blocked
 	if ($blocked_cache->{$apackid}) {
 	  push @blocked, "$aprp/$arch/$apackid";
@@ -575,6 +587,7 @@ sub check {
 
 sub build {
   my ($self, $ctx, $packid, $pdata, $info, $data) = @_;
+  my ($bconf, $rpms, $pool, $dep2pkg, $rpms_hdrmd5, $reason) = @$data;
 
   my $gctx = $ctx->{'gctx'};
   my $myarch = $gctx->{'arch'};
@@ -584,8 +597,6 @@ sub build {
   my $relsyncmax = $ctx->{'relsyncmax'};
   my $remoteprojs = $gctx->{'remoteprojs'};
   my $gdst = $ctx->{'gdst'};
-
-  my ($bconf, $rpms, $pool, $dep2pkg, $rpms_hdrmd5, $reason) = @$data;
   my $prp = "$projid/$repoid";
 
   my $dobuildinfo = $ctx->{'dobuildinfo'};
@@ -606,7 +617,7 @@ sub build {
         'package' => $b[3],
         'binary' => $b[4],
       };
-    } elsif ($dobuildinfo && (($b[4] =~  /^(.*)[-.]appdata\.xml$/) || $b[4] eq '_modulemd.yaml')) {
+    } elsif ($dobuildinfo && (($b[4] =~ /[-.]appdata\.xml$/) || $b[4] eq '_modulemd.yaml')) {
       $b = {
         'project' => $b[0],
         'repository' => $b[1],

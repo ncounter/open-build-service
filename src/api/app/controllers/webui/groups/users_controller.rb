@@ -37,7 +37,7 @@ module Webui
             flash.now[:success] = "Gave maintainer rights to '#{@user}'"
             render 'flash', status: :ok
           else
-            flash.now[:error] = "Couldn't make user '#{user}' maintainer: #{group_maintainer.errors.full_messages.to_sentence}"
+            flash.now[:error] = "Couldn't make user '#{@user}' maintainer: #{group_maintainer.errors.full_messages.to_sentence}"
             render 'flash', status: :bad_request
           end
         else
@@ -51,7 +51,7 @@ module Webui
         groups_user = GroupsUser.find_by(group: @group, user: @user)
         authorize groups_user, :destroy?
 
-        if @group.remove_user(@user)
+        if @group.remove_user(@user, user_session_login: User.session.login)
           flash[:success] = "Removed user '#{@user}' from group '#{@group}'"
         else
           flash[:error] = "Couldn't remove user '#{@user}' from group '#{@group}'"

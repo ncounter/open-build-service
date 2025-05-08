@@ -1,7 +1,7 @@
 class WorkflowRunRowComponent < ApplicationComponent
-  attr_reader :workflow_run, :status, :hook_event, :hook_action, :repository_name, :repository_url, :event_source_name, :event_source_url
+  attr_reader :workflow_run, :status, :hook_event, :hook_action, :repository_name, :repository_url, :event_source_name, :event_source_url, :formatted_event_source_name, :token_id
 
-  def initialize(workflow_run:)
+  def initialize(workflow_run:, token_id:)
     super
 
     @workflow_run = workflow_run
@@ -12,15 +12,8 @@ class WorkflowRunRowComponent < ApplicationComponent
     @repository_url = workflow_run.repository_url
     @event_source_name = workflow_run.event_source_name
     @event_source_url = workflow_run.event_source_url
-  end
-
-  def formatted_event_source_name
-    case hook_event
-    when 'pull_request', 'Merge Request Hook'
-      "##{event_source_name}"
-    else
-      event_source_name
-    end
+    @formatted_event_source_name = workflow_run.formatted_event_source_name
+    @token_id = token_id
   end
 
   def status_title
@@ -37,11 +30,11 @@ class WorkflowRunRowComponent < ApplicationComponent
   def status_icon
     classes = case status
               when 'running'
-                ['fas', 'fa-running']
+                %w[fas fa-running]
               when 'success'
-                ['fas', 'fa-check', 'text-primary']
+                %w[fas fa-check text-primary]
               else
-                ['fas', 'fa-exclamation-triangle', 'text-danger']
+                %w[fas fa-exclamation-triangle text-danger]
               end
     classes.join(' ')
   end

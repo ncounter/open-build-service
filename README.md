@@ -3,7 +3,7 @@
 [![Code Climate](https://codeclimate.com/github/openSUSE/open-build-service.png)](https://codeclimate.com/github/openSUSE/open-build-service)
 [![Depfu](https://badges.depfu.com/badges/3c5817c5855d9da3eabf1b71d64c46c1/overview.svg)](https://depfu.com/github/openSUSE/open-build-service?project=src%2Fapi%40Bundler)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/6411/badge)](https://bestpractices.coreinfrastructure.org/projects/6411)
-[![build result](https://build.opensuse.org/projects/OBS:Server:Unstable/packages/obs-server/badge.svg?type=default&repository=15.4&architecture=x86_64)](https://build.opensuse.org/package/show/OBS:Server:Unstable/obs-server)
+[![build result](https://build.opensuse.org/projects/OBS:Server:Unstable/packages/obs-server/badge.svg?type=default&repository=15.6&architecture=x86_64)](https://build.opensuse.org/package/show/OBS:Server:Unstable/obs-server)
 
 # Open Build Service
 The [Open Build Service (OBS)](https://www.openbuildservice.org) is a generic system to build and distribute binary packages from sources in an automatic, consistent, and reproducible way. You can release packages as well as updates, add-ons, appliances, and entire distributions for a wide range of operating systems and hardware architectures. More information can be found on [openbuildservice.org](https://www.openbuildservice.org).
@@ -19,6 +19,8 @@ You can discuss with the OBS Team via IRC on the channel [#opensuse-buildservice
 ### Development / Contribution
 If you want to contribute to the OBS, please checkout our [contribution readme](CONTRIBUTING.md):-)
 
+![Contribution Analytics Image](https://repobeats.axiom.co/api/embed/3b8f8218c75ecc879ac59b8acc2279f66c177bb7.svg "Repobeats analytics image")
+
 ## Source Code Repository Layout
 The OBS source code repository is hosted on [Github](https://github.com/opensuse/open-build-service) and organized like this:
 
@@ -30,14 +32,14 @@ The OBS source code repository is hosted on [Github](https://github.com/opensuse
 ## Installation
 To run the OBS in production, we recommend using our [appliance](https://openbuildservice.org/download/) which is the whole package: A recent and stable Linux Operating System ([openSUSE](https://www.opensuse.org)) bundled and pre-configured with all the server and OBS components you need to get going.
 
-If that is not for you because you have some special needs for your setup (e.g. different partition schema, SLES as base system, etc.), you can also install our packages and run a setup wizard. The docker-compose setup is meant only for development.
+If that is not for you because you have some special needs for your setup (e.g. different partition schema, SLES as base system, etc.), you can also install our packages and run a setup wizard. The docker compose setup is meant only for development.
 
 After finishing the installation of your base system, follow these steps:
 
-1. Add the OBS software repository with zypper. Please be aware, that the needed URL differs, depending on your Base Operating System. We use openSUSE Leap 15.1 in this example.
+1. Add the OBS software repository with zypper. Please be aware, that the needed URL differs, depending on your Base Operating System. We use openSUSE Leap 15.4 in this example.
 
     ```shell
-    zypper ar -f https://download.opensuse.org/repositories/OBS:/Server:/2.10/openSUSE_15.1/OBS:Server:2.10.repo
+    zypper ar -f https://download.opensuse.org/repositories/OBS:/Server:/2.10/15.4/OBS:Server:2.10.repo
     ```
 
 2. Install the package
@@ -54,5 +56,5 @@ After finishing the installation of your base system, follow these steps:
 
 ## Advanced Setup
 
-If you have a more complex setup (e.g. a distributed backend), we recommend to read the Administration
-chapter in our [user manual](https://openbuildservice.org/help/manuals/obs-user-guide/cha.obs.admin.html).
+If you have a more complex setup (e.g. a distributed backend), we recommend to read the High-level Overview
+chapter in our [Administrator Guide](https://openbuildservice.org/help/manuals/obs-admin-guide/cha-obs-admin).

@@ -1,6 +1,4 @@
-require 'rails_helper'
-
-RSpec.describe Webui::RepositoriesController, vcr: true do
+RSpec.describe Webui::RepositoriesController, :vcr do
   let(:user) { create(:confirmed_user, :with_home, login: 'tom') }
   let(:admin_user) { create(:admin_user, login: 'admin') }
   let(:apache_project) { create(:project, name: 'Apache') }
@@ -15,28 +13,13 @@ RSpec.describe Webui::RepositoriesController, vcr: true do
     it { expect(assigns(:architectures)).to be_empty }
   end
 
-  describe 'GET #state' do
-    context 'with a valid repository param' do
-      before do
-        get :state, params: { project: user.home_project, repository: repo_for_user_home.name }
-      end
-
-      it { expect(assigns(:repository)).to eq(repo_for_user_home) }
-    end
-
-    context 'with a non valid repository param' do
-      it { expect { get :state, params: { project: user.home_project, repository: 'not_valid' } }.to raise_error ActiveRecord::RecordNotFound }
-      it { expect(assigns(:repository)).to be_falsey }
-    end
-  end
-
   describe 'POST #update' do
     before do
       login user
     end
 
     context 'updating non existent repository' do
-      it 'will raise a NoMethodError' do
+      it 'raises a NoMethodError' do
         expect do
           post :update, params: { project: user.home_project, repo: 'standard' }
         end.to raise_error(NoMethodError)
@@ -49,7 +32,7 @@ RSpec.describe Webui::RepositoriesController, vcr: true do
       end
 
       it { expect(repo_for_user_home.architectures.pluck(:name)).to be_empty }
-      it { expect(assigns(:repository_arch_hash).to_a).to match_array([['armv7l', false], ['i586', false], ['x86_64', false]]) }
+      it { expect(assigns(:repository_arch_hash).to_a).to contain_exactly(['armv7l', false], ['i586', false], ['x86_64', false]) }
       it { is_expected.to redirect_to(action: :index) }
       it { expect(flash[:success]).to eq('Successfully updated repository') }
     end
@@ -65,9 +48,9 @@ RSpec.describe Webui::RepositoriesController, vcr: true do
         expect(foo.count).to eq(foo.distinct.count)
       end
 
-      it { expect(repo_for_user_home.architectures.pluck(:name)).to match_array(['i586', 'x86_64']) }
-      it { expect(Architecture.available.pluck(:name)).to match_array(['armv7l', 'i586', 'x86_64']) }
-      it { expect(assigns(:repository_arch_hash).to_a).to match_array([['armv7l', false], ['i586', true], ['x86_64', true]]) }
+      it { expect(repo_for_user_home.architectures.pluck(:name)).to contain_exactly('i586', 'x86_64') }
+      it { expect(Architecture.available.pluck(:name)).to contain_exactly('armv7l', 'i586', 'x86_64') }
+      it { expect(assigns(:repository_arch_hash).to_a).to contain_exactly(['armv7l', false], ['i586', true], ['x86_64', true]) }
       it { is_expected.to redirect_to(action: :index) }
       it { expect(flash[:success]).to eq('Successfully updated repository') }
     end
@@ -93,7 +76,8 @@ RSpec.describe Webui::RepositoriesController, vcr: true do
 
     context 'with a non valid target repository' do
       before do
-        post :create, params: { project: user.home_project, repository: 'valid_name', target_project: another_project, target_repo: 'non_valid_repo' }
+        post :create, params: { project: user.home_project, repository: 'valid_name',
+                                add_repo_from_project_target_project: another_project, target_repo: 'non_valid_repo' }
       end
 
       it { expect(flash[:error]).to eq('Can not add repository: Path elements is invalid and Path Element: Link must exist') }
@@ -115,7 +99,7 @@ RSpec.describe Webui::RepositoriesController, vcr: true do
         target_repo = create(:repository, project: another_project)
         post :create, params: {
           project: user.home_project, repository: 'valid_name',
-          target_project: another_project, target_repo: target_repo.name, architectures: ['i586']
+          add_repo_from_project_target_project: another_project, target_repo: target_repo.name, architectures: ['i586']
         }
       end
 

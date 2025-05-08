@@ -8,11 +8,14 @@ namespace :dev do
 
       puts 'Creating workflow token and workflow runs...'
 
-      admin = User.get_default_admin
+      admin = User.default_admin
       User.session = admin
       project = RakeSupport.find_or_create_project(admin.home_project_name, admin)
 
       workflow_token = Token::Workflow.find_by(description: 'Testing token') || create(:workflow_token, executor: admin, description: 'Testing token')
+
+      # This automatically subscribes everyone to the workflow run related events
+      EventSubscription.create!(eventtype: Event::WorkflowRunFail.name, channel: :web, receiver_role: :token_executor, enabled: true)
 
       # GitHub
       create(:workflow_run, token: workflow_token)
@@ -21,6 +24,8 @@ namespace :dev do
       create(:workflow_run, :succeeded, :tag_push, token: workflow_token)
       create(:workflow_run, :succeeded, token: workflow_token)
       create(:workflow_run, :succeeded, :pull_request_closed, token: workflow_token)
+      create(:workflow_run, :with_url, token: workflow_token)
+      create(:workflow_run, :without_configuration_data, token: workflow_token)
 
       # GitLab
       create(:workflow_run_gitlab, token: workflow_token)
@@ -40,6 +45,7 @@ namespace :dev do
         create(:workflow_artifacts_per_step_link_package, workflow_run: workflow_run, source_project_name: source_project_name, target_project_name: target_project_name)
         create(:workflow_artifacts_per_step_rebuild_package, workflow_run: workflow_run, source_project_name: source_project_name, target_project_name: target_project_name)
         create(:workflow_artifacts_per_step_config_repositories, workflow_run: workflow_run, source_project_name: source_project_name, target_project_name: target_project_name)
+        create(:workflow_artifacts_per_step_set_flags, workflow_run: workflow_run, source_project_name: source_project_name, target_project_name: target_project_name)
       end
     end
 
@@ -48,7 +54,7 @@ namespace :dev do
       workflow_runs = WorkflowRun.where(status: 'running')
                                  .select do |workflow_run|
         workflow_run.hook_event.in?(['pull_request', 'Merge Request Hook']) &&
-          workflow_run.hook_action.in?(['closed', 'close', 'merge'])
+          workflow_run.hook_action.in?(%w[closed close merge])
       end
 
       puts "There are #{workflow_runs.count} workflow runs affected"
@@ -61,7 +67,7 @@ namespace :dev do
         next if projects.count > 1
 
         # If there is no project to remove (previously removed), the workflow run should change the status anyway.
-        User.get_default_admin.run_as { projects.first.destroy } if projects.count == 1
+        User.default_admin.run_as { projects.first.destroy } if projects.count == 1
         workflow_run.update(status: 'success')
       rescue StandardError => e
         Airbrake.notify("Failed to remove project created by the workflow: #{e}")

@@ -3,11 +3,11 @@
     .d-none.d-md-block
       %strong.text-uppercase User
       %ul
-        %li= link_to('Your Profile', user_path(User.session!))
-        - if User.session!.home_project
-          %li= link_to('Home Project', project_show_path(User.session!.home_project))
+        %li= link_to('Your Profile', user_path(User.session))
+        - if User.session.home_project
+          %li= link_to('Home Project', project_show_path(User.session.home_project))
         - else
-          %li= link_to('Create Home Project', new_project_path(name: User.session!.home_project_name))
+          %li= link_to('Create Home Project', new_project_path(name: User.session.home_project_name))
         %li= link_to('Logout', session_path, method: :delete)
   .d-none.d-md-block
     %strong.text-uppercase Locations
@@ -22,11 +22,13 @@
       %li= link_to('OpenBuildService.org', 'https://openbuildservice.org/')
       %li= link_to('Documentation', 'https://openbuildservice.org/help/manuals/')
       %li= link_to('API Documentation', "#{root_path}apidocs/index")
+      - if configuration.code_of_conduct.present?
+        %li= link_to('Code of Conduct', code_of_conduct_index_path)
 
   %div
     %strong.text-uppercase Contact
     %ul
       %li= link_to('Support', 'https://openbuildservice.org/support/')
-      %li= link_to('@OBShq', 'https://twitter.com/OBShq')
-      - if Configuration.tos_url.present?
-        %li= link_to('Terms', Configuration.tos_url)
+      %li= link_to('@OBShq', 'https://fosstodon.org/@obshq', ref: 'me')
+      - if configuration.tos_url.present?
+        %li= link_to('Terms', configuration.tos_url)

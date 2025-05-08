@@ -1,6 +1,6 @@
 require 'browser_helper'
 
-RSpec.describe 'Requests', js: true, vcr: true do
+RSpec.describe 'Requests', :js, :vcr do
   let(:submitter) { create(:confirmed_user, :with_home, login: 'kugelblitz') }
   let(:receiver) { create(:confirmed_user, :with_home, login: 'titan') }
   let(:target_project) { receiver.home_project }
@@ -16,23 +16,23 @@ RSpec.describe 'Requests', js: true, vcr: true do
         find('.show-content').click
         expect(page).to have_css('div.expanded')
         find('.show-content').click
-        expect(page).not_to have_css('div.expanded')
+        expect(page).to have_no_css('div.expanded')
       end
     end
   end
 
   context 'request show page' do
     let!(:superseded_bs_request) { create(:superseded_bs_request, superseded_by_request: bs_request) }
-    let!(:comment_1) { create(:comment, commentable: bs_request) }
-    let!(:comment_2) { create(:comment, commentable: superseded_bs_request) }
+    let!(:comment1) { create(:comment, commentable: bs_request) }
+    let!(:comment2) { create(:comment, commentable: superseded_bs_request) }
 
     it 'show request comments' do
       visit request_show_path(bs_request)
-      expect(page).to have_text(comment_1.body)
-      expect(page).not_to have_text(comment_2.body)
+      expect(page).to have_text(comment1.body)
+      expect(page).to have_no_text(comment2.body)
       find('a', text: "Comments for request #{superseded_bs_request.number}").click
-      expect(page).to have_text(comment_2.body)
-      expect(page).not_to have_text(comment_1.body)
+      expect(page).to have_text(comment2.body)
+      expect(page).to have_no_text(comment1.body)
     end
 
     describe 'request description field' do
@@ -71,10 +71,11 @@ RSpec.describe 'Requests', js: true, vcr: true do
         choose 'Group'
         fill_in 'Group:', with: roleaddition_group.title
         fill_in 'Description:', with: 'I can fix bugs too.'
-        expect { click_button('Request') }.to change(BsRequest, :count).by(1)
+        click_button('Request')
         expect(page).to have_text("#{submitter.realname} (#{submitter.login}) wants the group #{roleaddition_group} to get the role bugowner for project #{target_project}")
         expect(page).to have_css('#description-text', text: 'I can fix bugs too.')
         expect(page).to have_text('In state new')
+        expect(BsRequest.where(description: 'I can fix bugs too.', state: 'new').count).to be(1)
       end
 
       it 'can be accepted' do
@@ -87,7 +88,7 @@ RSpec.describe 'Requests', js: true, vcr: true do
         click_button 'Accept'
 
         expect(page).to have_text("Request #{bs_request.number}")
-        expect(find('span.badge.bg-success')).to have_text('accepted')
+        expect(find('span.badge.text-bg-success')).to have_text('accepted')
         expect(page).to have_text('In state accepted')
       end
     end
@@ -109,12 +110,13 @@ RSpec.describe 'Requests', js: true, vcr: true do
         choose 'Group'
         fill_in 'Group:', with: roleaddition_group.title
         fill_in 'Description:', with: 'I can produce bugs too.'
-        expect { click_button('Request') }.to change(BsRequest, :count).by(1)
+        click_button('Request')
 
         expect(page).to have_text("#{submitter.realname} (#{submitter.login}) wants the group #{roleaddition_group.title} to get the role maintainer " \
                                   "for package #{target_project} / #{target_package}")
         expect(page).to have_css('#description-text', text: 'I can produce bugs too.')
         expect(page).to have_text('In state new')
+        expect(BsRequest.where(description: 'I can produce bugs too.', state: 'new').count).to be(1)
       end
 
       it 'can be accepted' do
@@ -123,7 +125,7 @@ RSpec.describe 'Requests', js: true, vcr: true do
         click_button 'Accept'
 
         expect(page).to have_text("Request #{bs_request.number}")
-        expect(find('span.badge.bg-success')).to have_text('accepted')
+        expect(find('span.badge.text-bg-success')).to have_text('accepted')
         expect(page).to have_text('In state accepted')
       end
     end
@@ -137,12 +139,13 @@ RSpec.describe 'Requests', js: true, vcr: true do
         desktop? ? click_link('Request Role Addition') : click_menu_link('Actions', 'Request Role Addition')
         choose 'Bugowner'
         choose 'User'
-        fill_in 'User:', with: "#{submitter.login}"
+        fill_in 'User:', with: submitter.login.to_s
         fill_in 'Description:', with: 'I can fix bugs too.'
-        expect { click_button('Request') }.to change(BsRequest, :count).by(1)
+        click_button('Request')
         expect(page).to have_text("#{submitter.realname} (#{submitter.login}) wants to get the role bugowner for project #{target_project}")
         expect(page).to have_css('#description-text', text: 'I can fix bugs too.')
         expect(page).to have_text('In state new')
+        expect(BsRequest.where(description: 'I can fix bugs too.', state: 'new').count).to be(1)
       end
 
       it 'can be accepted' do
@@ -155,7 +158,7 @@ RSpec.describe 'Requests', js: true, vcr: true do
         click_button 'Accept'
 
         expect(page).to have_text("Request #{bs_request.number}")
-        expect(find('span.badge.bg-success')).to have_text('accepted')
+        expect(find('span.badge.text-bg-success')).to have_text('accepted')
         expect(page).to have_text('In state accepted')
       end
     end
@@ -176,11 +179,12 @@ RSpec.describe 'Requests', js: true, vcr: true do
         choose 'User'
         fill_in 'User:', with: submitter.login
         fill_in 'Description:', with: 'I can produce bugs too.'
-        expect { click_button('Request') }.to change(BsRequest, :count).by(1)
+        click_button('Request')
         expect(page).to have_text("#{submitter.realname} (#{submitter.login}) wants to get the role maintainer " \
                                   "for package #{target_project} / #{target_package}")
         expect(page).to have_css('#description-text', text: 'I can produce bugs too.')
         expect(page).to have_text('In state new')
+        expect(BsRequest.where(description: 'I can produce bugs too.', state: 'new').count).to be(1)
       end
 
       it 'can be accepted' do
@@ -189,7 +193,7 @@ RSpec.describe 'Requests', js: true, vcr: true do
         click_button 'Accept'
 
         expect(page).to have_text("Request #{bs_request.number}")
-        expect(find('span.badge.bg-success')).to have_text('accepted')
+        expect(find('span.badge.text-bg-success')).to have_text('accepted')
         expect(page).to have_text('In state accepted')
       end
     end
@@ -203,15 +207,15 @@ RSpec.describe 'Requests', js: true, vcr: true do
         login submitter
         visit request_show_path(bs_request)
         desktop? ? click_link('Add a Review') : click_menu_link('Actions', 'Add a Review')
-        find(:id, 'review_type').select('User')
+        find_by_id('review_type').select('User')
         fill_in 'review_user', with: reviewer.login
         fill_in 'Comment for reviewer:', with: 'Please review'
         click_button('Accept')
         expect(page).to have_text(/Open review for\s+#{reviewer.login}/)
         expect(page).to have_text('Request 1')
-        expect(find('span.badge.bg-secondary')).to have_text('review')
+        expect(find('span.badge.text-bg-secondary')).to have_text('review')
         expect(page).to have_text('In state review')
-        expect(Review.all.count).to eq(1)
+        expect(Review.count).to eq(1)
         logout
 
         login reviewer
@@ -234,7 +238,7 @@ RSpec.describe 'Requests', js: true, vcr: true do
         login submitter
         visit request_show_path(bs_request)
         desktop? ? click_link('Add a Review') : click_menu_link('Actions', 'Add a Review')
-        find(:id, 'review_type').select('Group')
+        find_by_id('review_type').select('Group')
         fill_in 'review_group', with: review_group.title
         click_button('Accept')
         expect(page).to have_text("Open review for #{review_group.title}")
@@ -246,7 +250,7 @@ RSpec.describe 'Requests', js: true, vcr: true do
         login submitter
         visit request_show_path(bs_request)
         desktop? ? click_link('Add a Review') : click_menu_link('Actions', 'Add a Review')
-        find(:id, 'review_type').select('Project')
+        find_by_id('review_type').select('Project')
         fill_in 'review_project', with: submitter.home_project
         click_button('Accept')
         expect(page).to have_text("Open review for #{submitter.home_project}")
@@ -260,7 +264,7 @@ RSpec.describe 'Requests', js: true, vcr: true do
         login submitter
         visit request_show_path(bs_request)
         desktop? ? click_link('Add a Review') : click_menu_link('Actions', 'Add a Review')
-        find(:id, 'review_type').select('Package')
+        find_by_id('review_type').select('Package')
         fill_in 'review_project', with: submitter.home_project
         # Remove focus from autocomplete. Needed to remove the `disabled` attribute from `review_package`.
         find_by_id('review_comment').click
@@ -275,7 +279,7 @@ RSpec.describe 'Requests', js: true, vcr: true do
         login submitter
         visit request_show_path(bs_request)
         desktop? ? click_link('Add a Review') : click_menu_link('Actions', 'Add a Review')
-        find(:id, 'review_type').select('Project')
+        find_by_id('review_type').select('Project')
         fill_in 'review_project', with: 'INVALID/PROJECT'
         click_button('Accept')
         expect(page).to have_css('#flash', text: 'Unable to add review to request')
@@ -299,7 +303,7 @@ RSpec.describe 'Requests', js: true, vcr: true do
         it 'does not show any request reason' do
           login reviewer
           visit request_show_path(bs_request)
-          expect(find_by_id('review-0')).not_to have_text('requested:')
+          expect(find_by_id('review-0')).to have_no_text('requested:')
         end
       end
 
@@ -359,12 +363,12 @@ RSpec.describe 'Requests', js: true, vcr: true do
 
     it 'a delete request does not show the Changes Tab' do
       visit request_show_path(delete_bs_request)
-      expect(page).not_to have_text('Changes')
+      expect(page).to have_no_text('Changes')
     end
 
     it 'a delete request does not show the Issues Tab' do
       visit request_show_path(delete_bs_request)
-      expect(page).not_to have_text('Issues')
+      expect(page).to have_no_text('Issues')
     end
   end
 
@@ -381,7 +385,7 @@ RSpec.describe 'Requests', js: true, vcr: true do
 
     it 'does not show the project maintainers' do
       visit request_show_path(delete_bs_request)
-      expect(page).not_to have_text('Project Maintainers')
+      expect(page).to have_no_text('Project Maintainers')
     end
   end
 
@@ -399,14 +403,14 @@ RSpec.describe 'Requests', js: true, vcr: true do
     it 'does not set stage information for submit request' do
       login submitter
       visit request_show_path(bs_request)
-      click_on('Add Reviewer')
+      click_button('Add Reviewer')
       within '#add-reviewer-modal' do
         select 'Project Maintainers', from: 'review_type'
         fill_in 'Project', with: staging_project.name
         click_button('Accept')
       end
-      expect(page).not_to have_text('Staged in')
-      expect(page).not_to have_css('.bg-staging')
+      expect(page).to have_no_text('Staged in')
+      expect(page).to have_no_css('.bg-staging')
     end
   end
 
@@ -426,7 +430,7 @@ RSpec.describe 'Requests', js: true, vcr: true do
     it 'shows staging request information' do
       login staging_user
       visit request_show_path(staging_request)
-      click_on('Add Reviewer')
+      click_button('Add Reviewer')
       within '#add-reviewer-modal' do
         select 'Project Maintainers', from: 'review_type'
         fill_in 'Project', with: staging_project.name
@@ -434,6 +438,41 @@ RSpec.describe 'Requests', js: true, vcr: true do
       end
       expect(page).to have_text('Staged in')
       expect(page).to have_css('.bg-staging')
+    end
+  end
+
+  describe 'a request with patchinfo' do
+    let(:maintenance_project) do
+      create(:maintenance_project,
+             name: 'MaintenanceProject',
+             title: 'official maintenance space',
+             target_project: [target_project],
+             maintainer: receiver)
+    end
+    let(:maintenance_request) do
+      create(:bs_request_with_maintenance_incident_actions, :with_patchinfo, source_project_name: source_project.name,
+                                                                             source_package_names: [source_package.name],
+                                                                             target_project_name: maintenance_project.name,
+                                                                             target_releaseproject_names: [target_project.name])
+    end
+
+    before do
+      Flipper.enable(:request_show_redesign)
+      login submitter
+      create(:patchinfo, project_name: source_project.name, package_name: 'patchinfo')
+      visit request_show_path(maintenance_request)
+    end
+
+    it 'shows patch information' do
+      expect(page).to have_css('#patchinfo-details', text: 'Patches')
+    end
+
+    it 'shows category badge' do
+      expect(page).to have_css('#patchinfo-details .badge.text-bg-info', text: 'Recommended')
+    end
+
+    it 'shows rating badge' do
+      expect(page).to have_css('#patchinfo-details .badge.text-bg-secondary', text: 'Low priority')
     end
   end
 end

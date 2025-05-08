@@ -6,7 +6,7 @@ post:
     This endpoint doesn't create or modify any data.
 
     More information about constraints can be found in the
-    [user guide](https://openbuildservice.org/help/manuals/obs-user-guide/cha.obs.build_job_constraints.html).
+    [user guide](https://openbuildservice.org/help/manuals/obs-user-guide/cha-obs-build-constraints).
 
     This operation is the same as `POST /worker/command/run?cmd=checkconstraints`.
   security:
@@ -104,11 +104,7 @@ post:
           schema:
             $ref: '../components/schemas/api_response.yaml'
           example:
-            code: 'not_found'
-            summary: |
-              &lt;status code="404"&gt;
-              &lt;summary&gt;repository 'home:Admin/openSUSE_Tumbleweed' has no architecture 'x86_64d'&lt;/summary&gt;
-              &lt;details&gt;404 repository 'home:Admin/openSUSE_Tumbleweed' has no architecture 'x86_64d'&lt;/details&gt;
-              &lt;/status&gt;
+            code: 404
+            summary: repository 'home:Admin/openSUSE_Tumbleweed' has no architecture 'x86_64d'
   tags:
     - Workers

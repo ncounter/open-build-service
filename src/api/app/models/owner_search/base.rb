@@ -7,7 +7,7 @@ module OwnerSearch
     end
 
     def devel_disabled?(project = nil)
-      return ['0', 'false'].include?(params[:devel]) if params[:devel]
+      return %w[0 false].include?(params[:devel]) if params[:devel]
 
       attrib = project_attrib(project)
       attrib && attrib.values.exists?(value: 'DisableDevel')
@@ -31,7 +31,7 @@ module OwnerSearch
       return [Project.get_by_name(params[:project])] if params[:project]
 
       # Find all marked projects
-      projects = Project.find_by_attribute_type(attribute)
+      projects = Project.joins(:attribs).where(attribs: { attrib_type_id: attribute.id })
       return projects unless projects.empty?
 
       raise AttributeNotSetError, "The attribute #{attribute.fullname} is not set to define default projects."
@@ -50,7 +50,7 @@ module OwnerSearch
       if attrib && attrib.values.exists?(value: 'BugownerOnly')
         ['bugowner']
       else
-        ['maintainer', 'bugowner']
+        %w[maintainer bugowner]
       end
     end
 

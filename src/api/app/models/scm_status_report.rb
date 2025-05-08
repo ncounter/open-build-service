@@ -9,7 +9,7 @@
 class SCMStatusReport < ApplicationRecord
   belongs_to :workflow_run
 
-  enum status: {
+  enum :status, {
     success: 0,
     fail: 1
   }
@@ -22,9 +22,9 @@ class SCMStatusReport < ApplicationRecord
 
   def status_class
     if success?
-      'bg-primary'
+      'text-bg-primary'
     else
-      'bg-danger'
+      'text-bg-danger'
     end
   end
 end

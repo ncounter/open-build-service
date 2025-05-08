@@ -1,11 +1,4 @@
-require 'rails_helper'
-
-# WARNING: If you change tests make sure you uncomment this line
-# and start a test backend. Some of the actions
-# require real backend answers for projects/packages.
-# CONFIG['global_write_through'] = true
-
-RSpec.describe UpdatePackageMetaJob, vcr: true do
+RSpec.describe UpdatePackageMetaJob, :vcr do
   include ActiveJob::TestHelper
 
   let(:user) { create(:confirmed_user, :with_home, login: 'tom') }
@@ -35,12 +28,12 @@ RSpec.describe UpdatePackageMetaJob, vcr: true do
 
   describe '#scan_links' do
     # If the package has a link it will check if a BackendPackage exists, otherwise, it will create it.
+    subject { UpdatePackageMetaJob.new.scan_links }
+
     before do
       User.session = user
       branch_package.branch
     end
-
-    subject { UpdatePackageMetaJob.new.scan_links }
 
     context 'with a BranchPackage that does have an entry in BackendPackage' do
       before do

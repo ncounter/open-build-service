@@ -1,10 +1,6 @@
-require 'rails_helper'
 require 'webmock/rspec'
-# WARNING: If you change owner tests make sure you uncomment this line
-# and start a test backend. Some of the Owner methods
-# require real backend answers for projects/packages.
-# CONFIG['global_write_through'] = true
-RSpec.describe Webui::ProjectController, vcr: true do
+
+RSpec.describe Webui::ProjectController, :vcr do
   let(:user) { create(:confirmed_user, :with_home, login: 'tom') }
   let(:admin_user) { create(:admin_user, login: 'admin') }
   let(:apache_project) { create(:project, name: 'Apache') }
@@ -16,6 +12,7 @@ RSpec.describe Webui::ProjectController, vcr: true do
   let(:maintenance_project) { create(:maintenance_project, name: 'maintenance_project') }
   let(:project_with_package) { create(:project_with_package, name: 'NewProject', package_name: 'PackageExample') }
   let(:repo_for_user_home) { create(:repository, project: user.home_project) }
+  let(:json_response) { response.parsed_body }
 
   describe 'CSRF protection' do
     before do
@@ -29,7 +26,7 @@ RSpec.describe Webui::ProjectController, vcr: true do
       ActionController::Base.allow_forgery_protection = false
     end
 
-    it 'will protect forms without authenticity token' do
+    it 'protects forms without authenticity token' do
       expect { post :save_person, params: { project: user.home_project } }.to raise_error ActionController::InvalidAuthenticityToken
     end
   end
@@ -40,11 +37,10 @@ RSpec.describe Webui::ProjectController, vcr: true do
     context 'with valid parameters' do
       before do
         login user
-        patch :update, params: { id: project.id, project: { description: 'My projects description', title: 'My projects title' } }
+        patch :update, params: { id: project.id, project: { description: 'My projects description', title: 'My projects title' }, format: :js }
         project.reload
       end
 
-      it { expect(response).to redirect_to(project_show_path(project)) }
       it { expect(flash[:success]).to eq('Project was successfully updated.') }
       it { expect(project.title).to eq('My projects title') }
       it { expect(project.description).to eq('My projects description') }
@@ -53,12 +49,11 @@ RSpec.describe Webui::ProjectController, vcr: true do
     context 'with invalid data' do
       before do
         login user
-        patch :update, params: { id: project.id, project: { description: 'My projects description', title: 'My projects title' * 200 } }
+        patch :update, params: { id: project.id, project: { description: 'My projects description', title: 'My projects title' * 200 }, format: :js }
         project.reload
       end
 
-      it { expect(response).to redirect_to(project_show_path(project)) }
-      it { expect(flash[:error]).to eq('Failed to update project') }
+      it { expect(flash[:error]).to eq('Failed to update the project.') }
       it { expect(project.title).to be_nil }
       it { expect(project.description).to be_nil }
     end
@@ -75,22 +70,20 @@ RSpec.describe Webui::ProjectController, vcr: true do
     context 'without search term' do
       before do
         get :autocomplete_projects
-        @json_response = response.parsed_body
       end
 
-      it { expect(@json_response).to contain_exactly(apache_project.name, apache2_project.name, opensuse_project.name) }
-      it { expect(@json_response).not_to include(apache_maintenance_incident_project.name) }
+      it { expect(json_response).to contain_exactly(apache_project.name, apache2_project.name, opensuse_project.name) }
+      it { expect(json_response).not_to include(apache_maintenance_incident_project.name) }
     end
 
     context 'with search term' do
       before do
         get :autocomplete_projects, params: { term: 'Apache' }
-        @json_response = response.parsed_body
       end
 
-      it { expect(@json_response).to contain_exactly(apache_project.name, apache2_project.name) }
-      it { expect(@json_response).not_to include(apache_maintenance_incident_project.name) }
-      it { expect(@json_response).not_to include(opensuse_project.name) }
+      it { expect(json_response).to contain_exactly(apache_project.name, apache2_project.name) }
+      it { expect(json_response).not_to include(apache_maintenance_incident_project.name) }
+      it { expect(json_response).not_to include(opensuse_project.name) }
     end
 
     context 'with a subprojects' do
@@ -99,19 +92,9 @@ RSpec.describe Webui::ProjectController, vcr: true do
       context 'and searching for parent project' do
         before do
           get :autocomplete_projects, params: { term: 'Apache' }
-          @json_response = response.parsed_body
         end
 
-        it { expect(@json_response).to include(apache_subproject.name) }
-      end
-
-      context 'and searching for parent project' do
-        before do
-          get :autocomplete_projects, params: { term: 'Apache:' }
-          @json_response = response.parsed_body
-        end
-
-        it { expect(@json_response).to include(apache_subproject.name) }
+        it { expect(json_response).to include(apache_subproject.name) }
       end
     end
   end
@@ -121,11 +104,10 @@ RSpec.describe Webui::ProjectController, vcr: true do
       apache_project
       apache_maintenance_incident_project
       get :autocomplete_incidents, params: { term: 'Apache' }
-      @json_response = response.parsed_body
     end
 
-    it { expect(@json_response).to contain_exactly(apache_maintenance_incident_project.name) }
-    it { expect(@json_response).not_to include(apache_project.name) }
+    it { expect(json_response).to contain_exactly(apache_maintenance_incident_project.name) }
+    it { expect(json_response).not_to include(apache_project.name) }
   end
 
   describe 'GET #autocomplete_packages' do
@@ -138,42 +120,39 @@ RSpec.describe Webui::ProjectController, vcr: true do
     context 'with a nonexistent project' do
       before do
         get :autocomplete_packages, params: { project: 'non:existent:project' }
-        @json_response = response.parsed_body
       end
 
-      it { expect(@json_response).to be_nil }
+      it { expect(json_response).to be_nil }
     end
 
     context 'without search term' do
       before do
         get :autocomplete_packages, params: { project: apache_project }
-        @json_response = response.parsed_body
       end
 
-      it { expect(@json_response).to contain_exactly('Apache_Package', 'Apache2_Package') }
-      it { expect(@json_response).not_to include('Apache_Package_Another_Project') }
+      it { expect(json_response).to contain_exactly('Apache_Package', 'Apache2_Package') }
+      it { expect(json_response).not_to include('Apache_Package_Another_Project') }
     end
 
     context 'with search term' do
       before do
         get :autocomplete_packages, params: { project: apache_project, term: 'Apache2' }
-        @json_response = response.parsed_body
       end
 
-      it { expect(@json_response).to contain_exactly('Apache2_Package') }
-      it { expect(@json_response).not_to include('Apache_Package') }
-      it { expect(@json_response).not_to include('Apache_Package_Another_Project') }
+      it { expect(json_response).to contain_exactly('Apache2_Package') }
+      it { expect(json_response).not_to include('Apache_Package') }
+      it { expect(json_response).not_to include('Apache_Package_Another_Project') }
     end
   end
 
   describe 'GET #autocomplete_repositories' do
+    let!(:repositories) { create_list(:repository, 5, project: apache_project) }
+
     before do
-      @repositories = create_list(:repository, 5, project: apache_project)
       get :autocomplete_repositories, params: { project: apache_project }
-      @json_response = response.parsed_body
     end
 
-    it { expect(@json_response).to match_array(@repositories.map(&:name)) }
+    it { expect(json_response).to match_array(repositories.map(&:name)) }
   end
 
   describe 'GET #users' do
@@ -244,8 +223,7 @@ RSpec.describe Webui::ProjectController, vcr: true do
     end
 
     it 'restores a project' do
-      allow(Project).to receive(:deleted?).and_return(true)
-      allow(Project).to receive(:restore).and_return(fake_project)
+      allow(Project).to receive_messages(deleted?: true, restore: fake_project)
 
       post :restore, params: { project: 'project_name' }
 
@@ -268,24 +246,6 @@ RSpec.describe Webui::ProjectController, vcr: true do
       allow_any_instance_of(Project).to receive(:number_of_build_problems).and_return(0)
     end
 
-    context 'without patchinfo' do
-      before do
-        get :show, params: { project: apache_project }
-      end
-
-      it { expect(assigns(:has_patchinfo)).to be_falsey }
-    end
-
-    context 'with patchinfo' do
-      before do
-        login admin_user
-        create(:patchinfo, project_name: apache_project.name, comment: 'Fake comment', force: false)
-        get :show, params: { project: apache_project }
-      end
-
-      it { expect(assigns(:has_patchinfo)).to be_truthy }
-    end
-
     context 'with comments' do
       before do
         apache_project.comments << build(:comment_project, user: user)
@@ -293,24 +253,6 @@ RSpec.describe Webui::ProjectController, vcr: true do
       end
 
       it { expect(assigns(:comments)).to match_array(apache_project.comments) }
-    end
-
-    context 'with bugowners' do
-      before do
-        create(:relationship_project_user, role: Role.find_by_title('bugowner'), project: apache_project, user: user)
-        get :show, params: { project: apache_project }
-      end
-
-      it { expect(assigns(:bugowners_mail)).to match_array([user.email]) }
-    end
-
-    context 'without bugowners' do
-      before do
-        get :show, params: { project: apache_project }
-      end
-
-      it { expect(assigns(:bugowners_mail)).to be_a(Array) }
-      it { expect(assigns(:bugowners_mail)).to be_empty }
     end
   end
 
@@ -500,11 +442,11 @@ RSpec.describe Webui::ProjectController, vcr: true do
     end
 
     it 'without a repository param' do
-      expect { post :remove_path_from_target, params: { project: user } }.to raise_error ActiveRecord::RecordNotFound
+      expect { post :remove_path_from_target, params: { project: user.home_project } }.to raise_error ActiveRecord::RecordNotFound
     end
 
     it 'with a repository param but without a path param' do
-      expect { post :remove_path_from_target, params: { repository: repo_for_user_home.id, project: user } }.to raise_error ActiveRecord::RecordNotFound
+      expect { post :remove_path_from_target, params: { repository: repo_for_user_home.id, project: user.home_project } }.to raise_error ActiveRecord::RecordNotFound
     end
 
     context 'with a repository and path' do
@@ -561,8 +503,8 @@ RSpec.describe Webui::ProjectController, vcr: true do
         it { is_expected.to redirect_to(action: :show, project: user.home_project) }
 
         it do
-          expect(flash[:error]).to eq("Project can't be unlocked: Unlock of maintenance incident #{user.home_project.name} is not possible," \
-                                      " because there is a running release request: #{bs_request.id}")
+          expect(flash[:error]).to eq("Project can't be unlocked: Unlock of maintenance incident #{user.home_project.name} is not possible, " \
+                                      "because there is a running release request: #{bs_request.id}")
         end
       end
     end
@@ -728,9 +670,9 @@ RSpec.describe Webui::ProjectController, vcr: true do
       end
 
       context 'three path elements' do
-        let(:path_element_2) { create(:path_element, repository: repository) }
-        let(:path_element_3) { create(:path_element, repository: repository) }
-        let(:path_elements) { [path_element, path_element_2, path_element_3] }
+        let(:path_element2) { create(:path_element, repository: repository) }
+        let(:path_element3) { create(:path_element, repository: repository) }
+        let(:path_elements) { [path_element, path_element2, path_element3] }
 
         context 'direction up' do
           let(:move) do
@@ -775,20 +717,12 @@ RSpec.describe Webui::ProjectController, vcr: true do
         end
       end
     end
-
-    context 'with non existing project' do
-      before do
-        login admin_user
-      end
-
-      it { expect { post :move_path, params: { project: 'non:existent:project' } }.to raise_error ActiveRecord::RecordNotFound }
-    end
   end
 
   describe 'GET #monitor' do
     let(:repo_for_user) { create(:repository, name: 'openSUSE_Tumbleweed', project: user.home_project) }
     let(:arch_i586) { Architecture.where(name: 'i586').first }
-    let(:arch_x86_64) { Architecture.where(name: 'x86_64').first }
+    let(:arch_x86_64) { Architecture.where(name: 'x86_64').first } # rubocop:disable Naming/VariableNumber
     let!(:package) { create(:package, project: user.home_project) }
 
     context 'with a project' do
@@ -825,7 +759,7 @@ RSpec.describe Webui::ProjectController, vcr: true do
           let(:additional_repo) { create(:repository, name: 'openSUSE_42.2', project: user.home_project) }
           let(:arch_s390x) { Architecture.where(name: 's390x').first }
           let!(:repository_achitecture_i586) { create(:repository_architecture, repository: repo_for_user, architecture: arch_i586) }
-          let!(:repository_achitecture_x86_64) { create(:repository_architecture, repository: repo_for_user, architecture: arch_x86_64) }
+          let!(:repository_achitecture_x86_64) { create(:repository_architecture, repository: repo_for_user, architecture: arch_x86_64) } # rubocop:disable Naming/VariableNumber
           let!(:repository_achitecture_s390x) { create(:repository_architecture, repository: additional_repo, architecture: arch_s390x) }
           let(:fake_buildresult) do
             <<-XML
@@ -877,7 +811,7 @@ RSpec.describe Webui::ProjectController, vcr: true do
           it { expect(assigns(:buildresult_unavailable)).to be_nil }
           it { expect(assigns(:packagenames)).to eq(['c++', 'redis']) }
           it { expect(assigns(:statushash)).to eq(statushash) }
-          it { expect(assigns(:repoarray)).to eq([['openSUSE_42.2', ['s390x']], ['openSUSE_Tumbleweed', ['i586', 'x86_64']]]) }
+          it { expect(assigns(:repoarray)).to eq([['openSUSE_42.2', ['s390x']], ['openSUSE_Tumbleweed', %w[i586 x86_64]]]) }
 
           it {
             expect(assigns(:repostatushash)).to eq('openSUSE_Tumbleweed' => { 'i586' => 'published', 'x86_64' => 'building' },
@@ -934,17 +868,17 @@ RSpec.describe Webui::ProjectController, vcr: true do
     let(:input) { 'ThisIsAPackage' }
 
     context 'a filter_string that matches' do
-      let(:filter_string) { 'Package' }
-
       subject { Webui::ProjectController.new.send(:filter_matches?, input, filter_string) }
+
+      let(:filter_string) { 'Package' }
 
       it { is_expected.to be_truthy }
     end
 
     context 'a filter_string does not match' do
-      let(:filter_string) { '!Package' }
-
       subject { Webui::ProjectController.new.send(:filter_matches?, input, filter_string) }
+
+      let(:filter_string) { '!Package' }
 
       it { is_expected.to be_falsey }
     end

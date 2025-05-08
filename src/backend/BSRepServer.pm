@@ -3,6 +3,7 @@ package BSRepServer;
 use strict;
 
 use BSConfiguration;
+use BSOBS;
 use BSRPC ':https';
 use BSUtil;
 use BSVerify;
@@ -12,7 +13,7 @@ use BSSolv;
 
 my $reporoot = "$BSConfig::bsdir/build";
 
-my @binsufs = qw{rpm deb pkg.tar.gz pkg.tar.xz pkg.tar.zst};
+my @binsufs = @BSOBS::binsufs;
 my $binsufsre = join('|', map {"\Q$_\E"} @binsufs);
 
 sub getconfig {
@@ -130,6 +131,8 @@ sub read_bininfo {
   # .bininfo not present or old style, generate it
   $bininfo = {};
   for my $file (ls($dir)) {
+    $bininfo->{'.nosourceaccess'} = {} if $file eq '.nosourceaccess';
+    $bininfo->{'.nouseforbuild'} = {} if $file eq '.channelinfo' || $file eq 'updateinfo.xml' || $file eq '.updateinfodata';
     if ($file =~ /\.(?:$binsufsre)$/) {
       my @s = stat("$dir/$file");
       my $r = {};
@@ -154,7 +157,7 @@ sub read_bininfo {
       my $r = {%$d, 'filename' => $file, 'id' => "$s[9]/$s[7]/$s[1]"};
       delete $r->{'path'};
       $bininfo->{$file} = $r;
-    } elsif ($file =~ /[-.]appdata\.xml$/ || $file eq '_modulemd.yaml' || $file =~ /slsa_provenance\.json$/) {
+    } elsif ($file =~ /[-.]appdata\.xml$/ || $file eq '_modulemd.yaml' || $file =~ /slsa_provenance\.json$/ || $file eq 'updateinfo.xml') {
       local *F;
       open(F, '<', "$dir/$file") || next;
       my @s = stat(F);
@@ -163,10 +166,6 @@ sub read_bininfo {
       $ctx->addfile(*F);
       close F;
       $bininfo->{$file} = {'md5sum' => $ctx->hexdigest(), 'filename' => $file, 'id' => "$s[9]/$s[7]/$s[1]"};
-    } elsif ($file eq '.nosourceaccess') {
-      $bininfo->{'.nosourceaccess'} = {};
-    } elsif ($file eq '.channelinfo' || $file eq 'updateinfo.xml') {
-      $bininfo->{'.nouseforbuild'} = {};
     }
   }
   return $bininfo;

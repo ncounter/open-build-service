@@ -63,12 +63,11 @@ class Patchinfo
     @document = Nokogiri::XML(@data, &:strict)
   end
 
-  def is_repository_matching?(repo, rt)
+  def repository_matching?(repo, rt)
     return false if repo.project.name != rt['project']
 
-    if rt['repository']
-      return false if repo.name != rt['repository']
-    end
+    return false if rt['repository'] && (repo.name != rt['repository'])
+
     true
   end
 
@@ -76,7 +75,7 @@ class Patchinfo
   def check_releasetarget!(rt)
     @project.repositories.each do |r|
       r.release_targets.each do |prt|
-        return if is_repository_matching?(prt.target_repository, rt)
+        return if repository_matching?(prt.target_repository, rt)
       end
     end
     raise ReleasetargetNotFound, "Release target '#{rt['project']}/#{rt['repository']}' is not defined " \
@@ -110,7 +109,7 @@ class Patchinfo
 
   def fetch_issue_for_package(package)
     # create diff per package
-    return if package.is_patchinfo?
+    return if package.patchinfo?
 
     package.package_issues.each do |i|
       add_issue_to_patchinfo(i.issue) if i.change == 'added'
@@ -142,7 +141,7 @@ class Patchinfo
 
   def patchinfo_node(project)
     xml = Nokogiri::XML('<patchinfo/>').root
-    if project.is_maintenance_incident?
+    if project.maintenance_incident?
       # this is a maintenance incident project, the sub project name is the maintenance ID
       xml.set_attribute('incident', @pkg.project.name.gsub(/.*:/, ''))
     end
@@ -196,7 +195,7 @@ class Patchinfo
     @pkg = Package.get_by_project_and_name(project, pkg_name)
     return if force
 
-    if @pkg.is_patchinfo?
+    if @pkg.patchinfo?
       raise PatchinfoFileExists, "createpatchinfo command: the patchinfo #{pkg_name} exists already. " \
                                  'Either use force=1 re-create the _patchinfo or use updatepatchinfo for updating.'
     else
@@ -251,7 +250,7 @@ class Patchinfo
     # validate _patchinfo for completeness
     raise IncompletePatchinfo, 'The _patchinfo file is not parseble' if data.empty?
 
-    ['rating', 'category', 'summary'].each do |field|
+    %w[rating category summary].each do |field|
       raise IncompletePatchinfo, "The _patchinfo has no #{field} set" if data[field].blank?
     end
     # a patchinfo may limit the targets

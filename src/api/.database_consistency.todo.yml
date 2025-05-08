@@ -1,19 +1,7 @@
 ---
 Architecture:
-  arch_name_index:
-    UniqueIndexChecker:
-      enabled: false
-  available:
-    ThreeStateBooleanChecker:
-      enabled: false
   id:
     PrimaryKeyTypeChecker:
-      enabled: false
-  lower(name):
-    MissingUniqueIndexChecker:
-      enabled: false
-  name:
-    LengthConstraintChecker:
       enabled: false
 Attrib:
   attribs_index:
@@ -22,14 +10,8 @@ Attrib:
   attribs_on_proj_and_pack:
     UniqueIndexChecker:
       enabled: false
-  binary:
-    LengthConstraintChecker:
-      enabled: false
   id:
     PrimaryKeyTypeChecker:
-      enabled: false
-  values:
-    ForeignKeyCascadeChecker:
       enabled: false
 AttribAllowedValue:
   id:
@@ -213,9 +195,6 @@ BinaryRelease:
   flavor:
     LengthConstraintChecker:
       enabled: false
-  id:
-    PrimaryKeyTypeChecker:
-      enabled: false
   medium:
     LengthConstraintChecker:
       enabled: false
@@ -276,8 +255,14 @@ BsRequestAction:
   source_package:
     LengthConstraintChecker:
       enabled: false
+  source_package_object:
+    ForeignKeyChecker:
+      enabled: false
   source_project:
     LengthConstraintChecker:
+      enabled: false
+  source_project_object:
+    ForeignKeyChecker:
       enabled: false
   source_rev:
     LengthConstraintChecker:
@@ -372,9 +357,6 @@ ChannelBinary:
   package:
     LengthConstraintChecker:
       enabled: false
-  supportstatus:
-    LengthConstraintChecker:
-      enabled: false
 ChannelBinaryList:
   channel_binaries:
     ForeignKeyCascadeChecker:
@@ -451,6 +433,13 @@ Comment:
   id:
     PrimaryKeyTypeChecker:
       enabled: false
+  project:
+    ForeignKeyChecker:
+      enabled: false
+CommentLock:
+  commentable_type:
+    LengthConstraintChecker:
+      enabled: false
 CommitActivity:
   id:
     PrimaryKeyTypeChecker:
@@ -471,20 +460,11 @@ CommitActivity:
     ForeignKeyChecker:
       enabled: false
 Configuration:
-  admin_email:
-    LengthConstraintChecker:
-      enabled: false
   allow_user_to_create_home_project:
     ThreeStateBooleanChecker:
       enabled: false
   anonymous:
     ThreeStateBooleanChecker:
-      enabled: false
-  api_url:
-    LengthConstraintChecker:
-      enabled: false
-  bugzilla_url:
-    LengthConstraintChecker:
       enabled: false
   change_password:
     ThreeStateBooleanChecker:
@@ -495,13 +475,8 @@ Configuration:
   default_access_disabled:
     ThreeStateBooleanChecker:
       enabled: false
-  default_tracker:
-    LengthConstraintChecker:
-      enabled: false
   description:
     ColumnPresenceChecker:
-      enabled: false
-    LengthConstraintChecker:
       enabled: false
   disable_publish_for_branches:
     ThreeStateBooleanChecker:
@@ -512,9 +487,6 @@ Configuration:
   download_on_demand:
     ThreeStateBooleanChecker:
       enabled: false
-  download_url:
-    LengthConstraintChecker:
-      enabled: false
   enforce_project_keys:
     ThreeStateBooleanChecker:
       enabled: false
@@ -524,42 +496,14 @@ Configuration:
   hide_private_options:
     ThreeStateBooleanChecker:
       enabled: false
-  http_proxy:
-    LengthConstraintChecker:
-      enabled: false
   id:
     PrimaryKeyTypeChecker:
       enabled: false
   name:
     ColumnPresenceChecker:
       enabled: false
-    LengthConstraintChecker:
-      enabled: false
-  no_proxy:
-    LengthConstraintChecker:
-      enabled: false
-  obs_url:
-    LengthConstraintChecker:
-      enabled: false
-  theme:
-    LengthConstraintChecker:
-      enabled: false
   title:
     ColumnPresenceChecker:
-      enabled: false
-    LengthConstraintChecker:
-      enabled: false
-  tos_url:
-    LengthConstraintChecker:
-      enabled: false
-  unlisted_projects_filter:
-    LengthConstraintChecker:
-      enabled: false
-  unlisted_projects_filter_description:
-    LengthConstraintChecker:
-      enabled: false
-  ymp_url:
-    LengthConstraintChecker:
       enabled: false
 DisabledBetaFeature:
   feature:
@@ -641,6 +585,18 @@ DownloadRepository:
   url:
     LengthConstraintChecker:
       enabled: false
+Event::AddedUserToGroup:
+  eventtype:
+    LengthConstraintChecker:
+      enabled: false
+    NullConstraintChecker:
+      enabled: false
+  mails_sent:
+    ThreeStateBooleanChecker:
+      enabled: false
+  payload:
+    LengthConstraintChecker:
+      enabled: false
 Event::Base:
   eventtype:
     LengthConstraintChecker:
@@ -689,7 +645,31 @@ Event::BuildUnchanged:
   payload:
     LengthConstraintChecker:
       enabled: false
+Event::ClearedDecision:
+  eventtype:
+    LengthConstraintChecker:
+      enabled: false
+    NullConstraintChecker:
+      enabled: false
+  mails_sent:
+    ThreeStateBooleanChecker:
+      enabled: false
+  payload:
+    LengthConstraintChecker:
+      enabled: false
 Event::CommentForRequest:
+  eventtype:
+    LengthConstraintChecker:
+      enabled: false
+    NullConstraintChecker:
+      enabled: false
+  mails_sent:
+    ThreeStateBooleanChecker:
+      enabled: false
+  payload:
+    LengthConstraintChecker:
+      enabled: false
+Event::FavoredDecision:
   eventtype:
     LengthConstraintChecker:
       enabled: false
@@ -714,6 +694,18 @@ Event::RelationshipCreate:
     LengthConstraintChecker:
       enabled: false
 Event::RelationshipDelete:
+  eventtype:
+    LengthConstraintChecker:
+      enabled: false
+    NullConstraintChecker:
+      enabled: false
+  mails_sent:
+    ThreeStateBooleanChecker:
+      enabled: false
+  payload:
+    LengthConstraintChecker:
+      enabled: false
+Event::RemovedUserFromGroup:
   eventtype:
     LengthConstraintChecker:
       enabled: false
@@ -1432,18 +1424,19 @@ Kiwi::Repository:
   username:
     LengthConstraintChecker:
       enabled: false
+LabelGlobal:
+  index_label_globals_on_project_id:
+    RedundantIndexChecker:
+      enabled: false
 LinkedProject:
+  db_project_id+linked_remote_project_name:
+    MissingUniqueIndexChecker:
+      enabled: false
   id:
     PrimaryKeyTypeChecker:
       enabled: false
   linked_db_project:
     ForeignKeyChecker:
-      enabled: false
-  linked_projects_index:
-    UniqueIndexChecker:
-      enabled: false
-  linked_remote_project_name:
-    LengthConstraintChecker:
       enabled: false
   project:
     ForeignKeyChecker:
@@ -1466,6 +1459,9 @@ MaintenanceIncident:
     LengthConstraintChecker:
       enabled: false
 Notification:
+  bs_request:
+    ForeignKeyChecker:
+      enabled: false
   bs_request_oldstate:
     LengthConstraintChecker:
       enabled: false
@@ -1538,12 +1534,6 @@ Package:
     ForeignKeyCascadeChecker:
       enabled: false
   scmsync:
-    LengthConstraintChecker:
-      enabled: false
-  token:
-    MissingIndexChecker:
-      enabled: false
-  url:
     LengthConstraintChecker:
       enabled: false
 PackageIssue:
@@ -1718,6 +1708,10 @@ ReleaseTarget:
   id:
     PrimaryKeyTypeChecker:
       enabled: false
+Report:
+  user:
+    ColumnPresenceChecker:
+      enabled: false
 Repository:
   channel_targets:
     ForeignKeyCascadeChecker:
@@ -1785,21 +1779,11 @@ Review:
     ForeignKeyChecker:
       enabled: false
 Role:
-  attrib_type_modifiable_bies:
-    ForeignKeyChecker:
-      enabled: false
-    ForeignKeyTypeChecker:
-      enabled: false
   global:
     ThreeStateBooleanChecker:
       enabled: false
   id:
     PrimaryKeyTypeChecker:
-      enabled: false
-  relationships:
-    ForeignKeyChecker:
-      enabled: false
-    ForeignKeyTypeChecker:
       enabled: false
   title:
     MissingUniqueIndexChecker:
@@ -2039,9 +2023,6 @@ User:
   realname:
     LengthConstraintChecker:
       enabled: false
-  rss_token:
-    MissingIndexChecker:
-      enabled: false
   state:
     ColumnPresenceChecker:
       enabled: false
@@ -2081,6 +2062,9 @@ WorkflowArtifactsPerStep:
     ForeignKeyChecker:
       enabled: false
 WorkflowRun:
+  hook_event:
+    ColumnPresenceChecker:
+      enabled: false
   id:
     PrimaryKeyTypeChecker:
       enabled: false
@@ -2090,13 +2074,14 @@ WorkflowRun:
   request_payload:
     LengthConstraintChecker:
       enabled: false
-    NullConstraintChecker:
-      enabled: false
   response_body:
     LengthConstraintChecker:
       enabled: false
   scm_status_reports:
     MissingIndexChecker:
+      enabled: false
+  scm_vendor:
+    ColumnPresenceChecker:
       enabled: false
   token:
     ForeignKeyChecker:

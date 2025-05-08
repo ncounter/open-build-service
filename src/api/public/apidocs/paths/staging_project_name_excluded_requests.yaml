@@ -1,7 +1,8 @@
 get:
   summary: List the requests excluded from a staging workflow.
   description: List the requests excluded from the staging workflow associated to the specified project.
-  # Authentication is not required
+  security:
+    - basic_authentication: []
   parameters:
     - $ref: '../components/parameters/project_name.yaml'
   responses:
@@ -51,7 +52,7 @@ post:
       description: |
         Bad Request.
 
-        XML Schema used for body validation: [status.xsd](../schema/status.xsd).
+        XML Schema used for body validation: [status.rng](../schema/status.rng).
       content:
         application/xml; charset=utf-8:
           schema:
@@ -109,7 +110,7 @@ delete:
       description: |
         Bad Request.
 
-        XML Schema used for body validation: [status.xsd](../schema/status.xsd).
+        XML Schema used for body validation: [status.rng](../schema/status.rng).
       content:
         application/xml; charset=utf-8:
           schema:

@@ -3,10 +3,16 @@ require 'builder'
 class Webui::PatchinfoController < Webui::WebuiController
   include Webui::PackageHelper
   before_action :set_project
-  before_action :get_binaries, except: [:show, :destroy, :new_tracker]
-  before_action :require_exists, except: [:create, :new_tracker]
+  before_action :set_binaries, except: %i[show destroy new_tracker]
+  before_action :require_package, except: %i[create new_tracker]
+  before_action :require_exists, except: %i[create new_tracker]
   before_action :require_login, except: [:show]
-  before_action :set_patchinfo, only: [:show, :edit]
+  before_action :set_patchinfo, only: %i[show edit]
+
+  rescue_from Package::UnknownObjectError do
+    flash[:error] = "Patchinfo '#{elide(params[:package])}' not found in project '#{elide(params[:project])}'"
+    redirect_to project_show_path(project: @project)
+  end
 
   def show
     @pkg_names = @project.packages.pluck(:name)
@@ -23,11 +29,9 @@ class Webui::PatchinfoController < Webui::WebuiController
   def create
     authorize @project, :update?, policy_class: ProjectPolicy
 
-    unless @project.exists_package?('patchinfo')
-      unless Patchinfo.new.create_patchinfo(@project.name, nil)
-        flash[:error] = 'Error creating patchinfo'
-        redirect_to(controller: 'project', action: 'show', project: @project) && return
-      end
+    if !@project.exists_package?('patchinfo') && !Patchinfo.new.create_patchinfo(@project.name, nil)
+      flash[:error] = 'Error creating patchinfo'
+      redirect_to(controller: 'project', action: 'show', project: @project) && return
     end
     @package = @project.packages.find_by_name('patchinfo')
     unless @package.patchinfo
@@ -44,7 +48,7 @@ class Webui::PatchinfoController < Webui::WebuiController
       xml = @patchinfo.to_xml(@project, @package)
       begin
         Package.verify_file!(@package, '_patchinfo', xml)
-        Backend::Api::Sources::Package.write_patchinfo(@package.project.name, @package.name, User.session!.login, xml)
+        Backend::Api::Sources::Package.write_patchinfo(@package.project.name, @package.name, User.session.login, xml)
         @package.sources_changed(wait_for_update: true) # wait for indexing for special files
       rescue APIError, Timeout::Error => e
         flash[:error] = "patchinfo is invalid: #{e.message}"
@@ -127,7 +131,7 @@ class Webui::PatchinfoController < Webui::WebuiController
       'boo#123456, CVE-1234-5678 and the string has to be a comma-separated list)'
   end
 
-  def get_binaries
+  def set_binaries
     @binarylist = []
     binary_list = Xmlhash.parse(Backend::Api::Build::Project.binarylist(params[:project]))
     binary_list.elements('result') do |result|
@@ -143,20 +147,10 @@ class Webui::PatchinfoController < Webui::WebuiController
   end
 
   def require_exists
-    if params[:package].present?
-      begin
-        @package = Package.get_by_project_and_name(params[:project], params[:package], use_source: false)
-      rescue Package::UnknownObjectError
-        flash[:error] = "Patchinfo '#{elide(params[:package])}' not found in project '#{elide(params[:project])}'"
-        redirect_to project_show_path(project: params[:project])
-        return
-      end
-    end
-
     return if @package && @package.patchinfo
 
     # FIXME: should work for remote packages
-    flash[:error] = "Patchinfo not found for #{elide(params[:project])}"
+    flash[:error] = "Patchinfo not found for #{@project.name}"
     redirect_to(controller: 'package', action: 'show', project: @project, package: @package)
   end
 

@@ -1,5 +1,3 @@
-require 'rails_helper'
-
 RSpec.describe Role do
   let(:role) { create(:role) }
 
@@ -11,7 +9,7 @@ RSpec.describe Role do
 
   describe '::hashed' do
     # created by db/seeds.rb
-    let(:existing_role_titles) { ['Admin', 'maintainer', 'bugowner', 'reviewer', 'downloader', 'reader'] }
+    let(:existing_role_titles) { %w[Admin maintainer bugowner reviewer downloader reader] }
 
     it 'returns a hashed version of Role.all with role titles as key' do
       existing_role_titles.each do |title|
@@ -21,7 +19,7 @@ RSpec.describe Role do
   end
 
   describe '::local_roles' do
-    let(:expected_local_roles) { Role.where(title: ['maintainer', 'bugowner', 'reviewer', 'downloader', 'reader']) }
+    let(:expected_local_roles) { Role.where(title: %w[maintainer bugowner reviewer downloader reader]) }
 
     it 'returns an array with all local role instances' do
       expect(Role.local_roles).to match_array(expected_local_roles)
@@ -33,20 +31,6 @@ RSpec.describe Role do
 
     it 'returns an array with all global role titles' do
       expect(Role.global_roles).to match_array(expected_global_roles)
-    end
-  end
-
-  describe '::find_by_title!' do
-    context 'called for an existing record' do
-      it 'returns the queried role' do
-        expect(Role.find_by_title!(role.title)).to eq(role)
-      end
-    end
-
-    context 'called for a non-existing record' do
-      it 'raises an APIError' do
-        expect { Role.find_by_title!('foobar') }.to raise_error(Role::NotFound, "Couldn't find Role 'foobar'")
-      end
     end
   end
 

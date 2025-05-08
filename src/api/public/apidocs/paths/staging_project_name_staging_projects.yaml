@@ -6,7 +6,8 @@ get:
     - If `requests` is present, the output includes the staged, untracked and obsolete requests as well as missing reviews.
     - If `status` is present, the output includes the overall state and the status xml (broken packages, missing reviews, checks, etc.)
     - If `history` is present, the output includes the history of the staging project.
-  # Authentication is not required
+  security:
+    - basic_authentication: []
   parameters:
     - $ref: '../components/parameters/project_name.yaml'
     - name: requests
@@ -31,8 +32,7 @@ get:
         type: string
         example:
           1
-      description: |
-        "Set to `1` if you want to include the history of the staging project, otherwise don't pass this query parameter."
+      description: "Set to `1` if you want to include the history of the staging project, otherwise don't pass this query parameter."
   responses:
     '200':
       description: OK. The request has succeeded.
@@ -115,7 +115,7 @@ post:
       description: |
         Bad Request.
 
-        XML Schema used for body validation: [status.xsd](../schema/status.xsd).
+        XML Schema used for body validation: [status.rng](../schema/status.rng).
       content:
         application/xml; charset=utf-8:
           schema:

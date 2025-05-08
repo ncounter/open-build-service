@@ -1,6 +1,6 @@
 require 'browser_helper'
 
-RSpec.describe "User's home project creation", js: true do
+RSpec.describe "User's home project creation", :js do
   let!(:user) do
     create(:confirmed_user,
            login: 'Jim',
@@ -15,10 +15,10 @@ RSpec.describe "User's home project creation", js: true do
 
     it 'view home page of another user' do
       expect(page).to have_css('#home-realname', text: 'Jim Knopf')
-      expect(page).not_to have_css("a[href='mailto:jim.knopf@puppenkiste.com']", text: 'jim.knopf@puppenkiste.com')
+      expect(page).to have_no_link('jim.knopf@puppenkiste.com', href: 'mailto:jim.knopf@puppenkiste.com')
 
-      expect(page).not_to have_link('Edit Your Account')
-      expect(page).not_to have_link('Change Your Password')
+      expect(page).to have_no_link('Edit Your Account')
+      expect(page).to have_no_link('Change Your Password')
 
       if mobile?
         expect(page).to have_text('Involved Projects and Packages')
@@ -36,7 +36,7 @@ RSpec.describe "User's home project creation", js: true do
 
     it 'view home page' do
       expect(page).to have_css('#home-realname', text: 'Jim Knopf')
-      expect(page).to have_css("a[href='mailto:jim.knopf@puppenkiste.com']", text: 'jim.knopf@puppenkiste.com')
+      expect(page).to have_link('jim.knopf@puppenkiste.com', href: 'mailto:jim.knopf@puppenkiste.com')
 
       expect(page).to have_link('Edit Your Account')
 
@@ -59,7 +59,7 @@ RSpec.describe "User's home project creation", js: true do
       expect(page).to have_link('Declined Requests')
       expect(page).to have_link('All Requests')
 
-      expect(page).not_to have_link('Maintenance Requests')
+      expect(page).to have_no_link('Maintenance Requests')
     end
 
     it 'edit account information' do
@@ -71,7 +71,7 @@ RSpec.describe "User's home project creation", js: true do
 
       expect(page).to have_text("User data for user 'Jim' successfully updated.")
       expect(page).to have_css('#home-realname', text: 'John Doe')
-      expect(page).to have_css("a[href='mailto:john.doe@opensuse.org']", text: 'john.doe@opensuse.org')
+      expect(page).to have_link('john.doe@opensuse.org', href: 'mailto:john.doe@opensuse.org')
     end
   end
 end

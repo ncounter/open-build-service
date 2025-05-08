@@ -7,7 +7,7 @@ class Review < ApplicationRecord
     setup 'review_not_found', 404, 'Review not found'
   end
 
-  VALID_REVIEW_STATES = [:new, :declined, :accepted, :superseded, :obsoleted].freeze
+  VALID_REVIEW_STATES = %i[new declined accepted superseded obsoleted].freeze
 
   belongs_to :bs_request, touch: true, optional: true
   has_many :history_elements, -> { order(:created_at) }, class_name: 'HistoryElement::Review', foreign_key: :op_object_id
@@ -74,6 +74,7 @@ class Review < ApplicationRecord
 
   before_validation :set_reviewable_association
   after_commit :update_cache
+  after_commit { PopulateToSphinxJob.perform_later(id: bs_request.id, model_name: :bs_request) }
 
   delegate :number, to: :bs_request
 
@@ -250,7 +251,7 @@ class Review < ApplicationRecord
   def matches_user?(user)
     return false unless user
     return user.login == by_user if by_user
-    return user.is_in_group?(by_group) if by_group
+    return user.in_group?(by_group) if by_group
 
     matches_maintainers?(user)
   end
@@ -274,7 +275,8 @@ class Review < ApplicationRecord
     return User.find_by(login: by_user) if by_user
     return Group.find_by(title: by_group) if by_group
     return Package.find_by_project_and_name(by_project, by_package) if by_package
-    return Project.find_by(name: by_project) if by_project
+
+    Project.find_by(name: by_project) if by_project
   end
 
   # Make sure this is always set, also for old records
@@ -303,7 +305,7 @@ class Review < ApplicationRecord
   end
 
   def check_reviewer!
-    selected_errors = errors.select { |error| error.attribute.in?([:user, :group, :project, :package]) }
+    selected_errors = errors.select { |error| error.attribute.in?(%i[user group project package]) }
     raise ::NotFoundError, selected_errors.map { |error| "#{error.attribute.capitalize} not found" }.to_sentence if selected_errors.any?
   end
 
@@ -313,9 +315,9 @@ class Review < ApplicationRecord
     return false unless by_project
 
     if by_package
-      user.has_local_permission?('change_package', Package.find_by_project_and_name(by_project, by_package))
+      user.local_permission?('change_package', Package.find_by_project_and_name(by_project, by_package))
     else
-      user.has_local_permission?('change_project', Project.find_by_name(by_project))
+      user.local_permission?('change_project', Project.find_by_name(by_project))
     end
   end
 

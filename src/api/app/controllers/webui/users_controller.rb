@@ -1,13 +1,13 @@
 class Webui::UsersController < Webui::WebuiController
-  # TODO: Remove this when we'll refactor kerberos_auth
-  before_action :kerberos_auth, only: [:index, :edit, :destroy, :update, :change_password, :edit_account]
-  before_action :authorize_user, only: [:index, :edit, :destroy, :update, :change_password, :edit_account]
-  before_action :require_admin, only: [:index, :edit, :destroy]
-  before_action :check_displayed_user, only: [:show, :edit, :update, :edit_account]
-  before_action :role_titles, only: [:show, :edit_account, :update]
-  before_action :account_edit_link, only: [:show, :edit_account, :update]
+  include Webui::NotificationsHandler
 
-  after_action :verify_authorized, only: [:index, :edit, :destroy, :update, :change_password, :edit_account]
+  before_action :require_login, except: %i[show new create tokens autocomplete]
+  before_action :require_admin, only: %i[index edit destroy]
+  before_action :check_displayed_user, only: %i[show edit censor update destroy edit_account]
+  before_action :role_titles, only: %i[show edit_account update]
+  before_action :account_edit_link, only: %i[show edit_account update]
+
+  after_action :verify_authorized, only: %i[edit destroy update edit_account]
 
   def index
     respond_to do |format|
@@ -17,8 +17,9 @@ class Webui::UsersController < Webui::WebuiController
   end
 
   def show
-    @groups = @displayed_user.groups
+    @groups = @displayed_user.groups.order(:title)
     @involved_items_service = UserService::Involved.new(user: @displayed_user, filters: extract_filter_params, page: params[:page])
+    @comments = paged_comments
 
     return if CONFIG['contribution_graph'] == :off
 
@@ -31,21 +32,24 @@ class Webui::UsersController < Webui::WebuiController
     @activities_per_year = UserYearlyContribution.new(@displayed_user, @first_day).call
     @date = params[:date]
     @activities_per_day = UserDailyContribution.new(@displayed_user, @date).call
+    @current_notification = handle_notification
   end
 
   def new
-    @pagetitle = params[:pagetitle] || 'Sign up'
-    @submit_btn_text = params[:submit_btn_text] || 'Sign up'
+    @pagetitle = params[:pagetitle] || 'Sign Up'
+    @submit_btn_text = params[:submit_btn_text] || 'Sign Up'
   end
 
-  def edit; end
+  def edit
+    authorize @displayed_user, :update?
+  end
 
   def create
     begin
       UnregisteredUser.register(create_params)
     rescue APIError => e
       flash[:error] = e.message
-      redirect_back(fallback_location: root_path)
+      redirect_back_or_to root_path
       return
     end
 
@@ -56,24 +60,32 @@ class Webui::UsersController < Webui::WebuiController
     else
       session[:login] = create_params[:login]
       User.session = User.find_by!(login: session[:login])
-      if User.session!.home_project
-        redirect_to project_show_path(User.session!.home_project)
+      if User.session.home_project
+        redirect_to project_show_path(User.session.home_project)
       else
         redirect_to root_path
       end
     end
   end
 
-  def update
-    unless User.admin_session?
-      if User.session! != @displayed_user || !@configuration.accounts_editable?(@displayed_user)
-        flash[:error] = "Can't edit #{@displayed_user.login}"
-        redirect_back(fallback_location: root_path)
-        return
-      end
-    end
+  def censor
+    authorize @displayed_user, :censor?
 
-    assign_common_user_attributes if @configuration.accounts_editable?(@displayed_user)
+    @displayed_user.update(params.require(:user).permit(:censored))
+
+    if @displayed_user.save
+      status = @displayed_user.censored ? "censored, they can't comment" : 'allowed to comment again'
+      flash[:success] = "User '#{@displayed_user.login}' successfully #{status}."
+    else
+      flash[:error] = "Couldn't update user: #{@displayed_user.errors.full_messages.to_sentence}."
+    end
+    redirect_back_or_to user_path(@displayed_user)
+  end
+
+  def update
+    authorize @displayed_user, :update?
+
+    assign_common_user_attributes
     assign_admin_attributes if User.admin_session?
 
     respond_to do |format|
@@ -86,21 +98,24 @@ class Webui::UsersController < Webui::WebuiController
         format.html { flash[:error] = message }
         format.js { flash.now[:error] = message }
       end
-      redirect_back(fallback_location: user_path(@displayed_user)) if request.format.symbol == :html
+      redirect_back_or_to user_path(@displayed_user) if request.format.symbol == :html
     end
   end
 
   def destroy
-    user = User.find_by(login: params[:login])
-    if user.delete
-      flash[:success] = "Marked user '#{user}' as deleted."
+    authorize @displayed_user, :destroy?
+
+    if @displayed_user.delete!(adminnote: params[:adminnote])
+      flash[:success] = "Marked user '#{@displayed_user}' as deleted."
     else
-      flash[:error] = "Marking user '#{user}' as deleted failed: #{user.errors.full_messages.to_sentence}"
+      flash[:error] = "Marking user '#{@displayed_user}' as deleted failed: #{@displayed_user.errors.full_messages.to_sentence}"
     end
     redirect_to(users_path)
   end
 
   def edit_account
+    authorize @displayed_user, :update?
+
     respond_to do |format|
       format.js
     end
@@ -115,13 +130,13 @@ class Webui::UsersController < Webui::WebuiController
   end
 
   def change_password
-    user = User.session!
-
-    unless @configuration.passwords_changable?(user)
+    unless ::Configuration.passwords_changable?
       flash[:error] = "You're not authorized to change your password."
-      redirect_back fallback_location: root_path
+      redirect_back_or_to root_path
       return
     end
+
+    user = User.session
 
     if user.authenticate(params[:password])
       user.password = params[:new_password]
@@ -132,12 +147,23 @@ class Webui::UsersController < Webui::WebuiController
         redirect_to action: :show, login: user
       else
         flash[:error] = "The password could not be changed. #{user.errors.full_messages.to_sentence}"
-        redirect_back fallback_location: root_path
+        redirect_back_or_to root_path
       end
     else
       flash[:error] = 'The value of current password does not match your current password. Please enter the password and try again.'
-      redirect_back fallback_location: root_path
+      redirect_back_or_to root_path
       nil
+    end
+  end
+
+  def rss_secret
+    user = User.session
+
+    verb_prefix = user.rss_secret.present? ? 're-' : ''
+
+    user.regenerate_rss_secret
+    respond_to do |format|
+      format.html { redirect_to my_subscriptions_path, notice: "Successfully #{verb_prefix}generated RSS secret" }
     end
   end
 
@@ -146,10 +172,6 @@ class Webui::UsersController < Webui::WebuiController
   def extract_filter_params
     params.slice(:search_text, :involved_projects, :involved_packages,
                  :role_maintainer, :role_bugowner, :role_reviewer, :role_downloader, :role_reader, :role_owner)
-  end
-
-  def authorize_user
-    authorize([:webui, User])
   end
 
   def create_params
@@ -169,13 +191,21 @@ class Webui::UsersController < Webui::WebuiController
   end
 
   def assign_common_user_attributes
-    @displayed_user.assign_attributes(params[:user].slice(:biography).permit!)
+    @displayed_user.assign_attributes(params[:user].slice(:biography, :color_theme, :in_beta).permit!)
     @displayed_user.assign_attributes(params[:user].slice(:realname, :email).permit!) unless @account_edit_link
-    @displayed_user.toggle(:in_beta) if params[:user][:in_beta]
   end
 
   def assign_admin_attributes
     @displayed_user.assign_attributes(params[:user].slice(:state, :ignore_auth_services).permit!)
     @displayed_user.update_globalroles(Role.global.where(id: params[:user][:role_ids])) unless params[:user][:role_ids].nil?
+  end
+
+  def paged_comments
+    return unless Flipper.enabled?(:content_moderation, User.session)
+    return unless policy(@displayed_user).comment_index?
+
+    comments = @displayed_user.comments.includes(:project).newest_first
+    params[:page] = comments.page(params[:page]).total_pages if comments.page(params[:page]).out_of_range?
+    comments.page(params[:page])
   end
 end

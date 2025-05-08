@@ -102,8 +102,8 @@ class PackageBuildStatus
     rescue Backend::Error
       currentcode = nil
     end
-    @buildcode = 'failed' if currentcode.in?(['unresolvable', 'failed', 'broken'])
-    @buildcode = 'building' if currentcode.in?(['building', 'scheduled', 'finished', 'signing', 'blocked'])
+    @buildcode = 'failed' if currentcode.in?(%w[unresolvable failed broken])
+    @buildcode = 'building' if currentcode.in?(%w[building scheduled finished signing blocked])
     @buildcode = 'excluded' if currentcode == 'excluded'
     # if it's currently succeeded but !@everbuilt, it's different sources
     return unless currentcode == 'succeeded'
@@ -139,6 +139,7 @@ class PackageBuildStatus
     @everbuilt = false
     @eversucceeded = false
     @buildcode = nil
+    codes = %w[succeeded unchanged]
 
     # first we check the lastfailures. This route is fast but only has up to
     # two results per package. If the md5sum does not match, we have to dig deeper
@@ -154,7 +155,7 @@ class PackageBuildStatus
       next unless entry.verifymd5 == @verifymd5 || entry.srcmd5 == @srcmd5
 
       @everbuilt = true
-      if entry.code == 'succeeded' || entry.code == 'unchanged'
+      if codes.include?(entry.code)
         @buildcode = 'succeeded'
         @eversucceeded = true
       end

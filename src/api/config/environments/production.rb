@@ -7,13 +7,12 @@ OBSApi::Application.configure do
   config.cache_classes = true
 
   # Use memcache for cache/session storage
-  if CONFIG['memcached_host']
-    config.cache_store = :mem_cache_store, CONFIG['memcached_host']
-    config.session_store = :mem_cache_store, CONFIG['memcached_host']
-  else
-    config.cache_store = :mem_cache_store
-    config.session_store = :mem_cache_store
-  end
+  config.cache_store = if CONFIG['memcached_host']
+                         [:mem_cache_store, CONFIG['memcached_host']]
+                       else
+                         :mem_cache_store
+                       end
+  config.session_store :cache_store
 
   # Include generic and useful information about system operation, but avoid logging too much
   # information to avoid inadvertent exposure of personally identifiable information (PII).
@@ -43,7 +42,7 @@ OBSApi::Application.configure do
   # config.action_dispatch.x_sendfile_header = 'X-Accel-Redirect' # for NGINX
 
   # Store uploaded files on the local file system (see config/storage.yml for options).
-  # config.active_storage.service = :local
+  config.active_storage.service = :local
 
   # Mount Action Cable outside main process or domain.
   # config.action_cable.mount_path = nil
@@ -124,7 +123,7 @@ OBSApi::Application.configure do
   # Use lograge to show the logs in one line
   config.lograge.enabled = true
   config.lograge.custom_options = lambda do |event|
-    exceptions = ['controller', 'action', 'format', 'id']
+    exceptions = %w[controller action format id]
     {
       params: event.payload[:params].except(*exceptions),
       host: event.payload[:headers].env['HTTP_X_FORWARDED_FOR']&.split(',')&.first || event.payload[:headers].env['REMOTE_ADDR'],

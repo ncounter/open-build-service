@@ -1,5 +1,3 @@
-require 'rails_helper'
-
 RSpec.describe BsRequestCleanTasksCacheJob do
   include ActiveJob::TestHelper
 
@@ -19,7 +17,7 @@ RSpec.describe BsRequestCleanTasksCacheJob do
       let!(:cache_key) { user.cache_key_with_version }
       let(:user) { create(:admin_user) }
 
-      subject! { BsRequestCleanTasksCacheJob.new.perform(request.id) }
+      before { BsRequestCleanTasksCacheJob.new.perform(request.id) }
 
       it { expect(user.reload.cache_key_with_version).not_to eq(cache_key) }
     end
@@ -35,7 +33,7 @@ RSpec.describe BsRequestCleanTasksCacheJob do
       let!(:cache_key) { user.cache_key_with_version }
       let(:user) { relationship_project_user.user }
 
-      subject! { BsRequestCleanTasksCacheJob.new.perform(request.id) }
+      before { BsRequestCleanTasksCacheJob.new.perform(request.id) }
 
       it { expect(user.reload.cache_key_with_version).not_to eq(cache_key) }
     end
@@ -55,7 +53,7 @@ RSpec.describe BsRequestCleanTasksCacheJob do
       let!(:cache_key) { user.cache_key_with_version }
       let(:user) { groups_user.user }
 
-      subject! { BsRequestCleanTasksCacheJob.new.perform(request.id) }
+      before { BsRequestCleanTasksCacheJob.new.perform(request.id) }
 
       it { expect(user.reload.cache_key_with_version).not_to eq(cache_key) }
     end
@@ -66,7 +64,7 @@ RSpec.describe BsRequestCleanTasksCacheJob do
       let!(:cache_key) { user.cache_key_with_version }
       let(:user) { relationship_package_user.user }
 
-      subject! { BsRequestCleanTasksCacheJob.new.perform(request.id) }
+      before { BsRequestCleanTasksCacheJob.new.perform(request.id) }
 
       it { expect(user.reload.cache_key_with_version).not_to eq(cache_key) }
     end
@@ -79,7 +77,7 @@ RSpec.describe BsRequestCleanTasksCacheJob do
       let!(:cache_key) { user.cache_key_with_version }
       let(:user) { groups_user.user }
 
-      subject! { BsRequestCleanTasksCacheJob.new.perform(request.id) }
+      before { BsRequestCleanTasksCacheJob.new.perform(request.id) }
 
       it { expect(user.reload.cache_key_with_version).not_to eq(cache_key) }
     end

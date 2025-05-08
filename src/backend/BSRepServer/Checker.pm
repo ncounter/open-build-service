@@ -30,11 +30,13 @@ use BSSched::BuildJob;
 use BSSched::BuildJob::Package;
 use BSSched::BuildJob::KiwiImage;
 use BSSched::BuildJob::KiwiProduct;
+use BSSched::BuildJob::ProductCompose;
 use BSSched::BuildJob::Docker;
 use BSSched::BuildJob::Unknown;
 use BSSched::BuildJob::BuildEnv;
 
 my %handlers = (
+  'productcompose'  => BSSched::BuildJob::ProductCompose->new(),
   'kiwi-product'    => BSSched::BuildJob::KiwiProduct->new(),
   'kiwi-image'      => BSSched::BuildJob::KiwiImage->new(),
   'docker'          => BSSched::BuildJob::Docker->new(),
@@ -179,6 +181,7 @@ sub newpool {
   if ($bconf) {
     $pool->settype('deb') if $bconf->{'binarytype'} eq 'deb';
     $pool->settype('arch') if $bconf->{'binarytype'} eq 'arch';
+    $pool->settype('apk') if $bconf->{'binarytype'} eq 'apk';
     $pool->setmodules($bconf->{'modules'}) if $bconf->{'modules'} && defined &BSSolv::pool::setmodules;
   }
   return $pool;
@@ -245,7 +248,7 @@ sub buildinfo {
   BSSched::BuildJob::add_expanddebug($ctx, 'meta deps expansion') if $expanddebug;
   die("unresolvable: ".join(", ", @edeps)."\n") unless $eok;
   $info->{'edeps'} = \@edeps;
-  my ($status, $error) = $handler->check($ctx, $packid, $pdata, $info, $bconf->{'type'});
+  my ($status, $error) = $handler->check($ctx, $packid, $pdata, $info, $bconf->{'type'}, \@edeps);
   die("$status: $error\n") if $status ne 'scheduled';
   ($status, $error) = $handler->build($ctx, $packid, $pdata, $info, $error);
   die("$status: $error\n") if $status ne 'scheduled';

@@ -1,13 +1,19 @@
 class UserPolicy < ApplicationPolicy
   def update?
-    user.can_modify_user?(record)
+    return false unless ::Configuration.accounts_editable?
+
+    user.admin? || user == record
   end
 
-  def show?
-    user.can_modify_user?(record)
+  def destroy?
+    update?
   end
 
-  def check_watchlist?
-    record.login == User.session!.login || User.admin_session?
+  def comment_index?
+    user == record || user.staff? || user.moderator? || user.admin?
+  end
+
+  def censor?
+    user.admin? || user.moderator?
   end
 end

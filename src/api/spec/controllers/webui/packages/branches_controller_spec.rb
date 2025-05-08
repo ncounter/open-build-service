@@ -1,7 +1,6 @@
 require 'webmock/rspec'
-require 'rails_helper'
 
-RSpec.describe Webui::Packages::BranchesController, vcr: true do
+RSpec.describe Webui::Packages::BranchesController, :vcr do
   let(:admin) { create(:admin_user, login: 'admin') }
   let(:user) { create(:confirmed_user, :with_home, login: 'tom') }
   let(:source_project) { user.home_project }
@@ -63,7 +62,7 @@ RSpec.describe Webui::Packages::BranchesController, vcr: true do
 
       it 'redirects to the branched package' do
         expect(response).to redirect_to(package_show_path(project: "#{source_project.name}:branches:#{source_project.name}",
-                                                          package: "#{source_package.name}"))
+                                                          package: source_package.name.to_s))
       end
     end
 

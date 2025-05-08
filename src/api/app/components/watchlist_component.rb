@@ -5,12 +5,18 @@ class WatchlistComponent < ApplicationComponent
     'BsRequest' => 'request'
   }.freeze
 
-  def initialize(user:, current_object:, bs_request: nil, package: nil, project: nil)
+  attr_reader :projects, :packages, :bs_requests
+
+  def initialize(user:, current_object:, bs_request: nil, package: nil, project: nil, bs_requests: [], packages: [], projects: [])
     super
 
     @user = user
     @object_to_be_watched = object_to_be_watched(bs_request, package, project)
     @current_object = current_object
+    @bs_requests = bs_requests
+    @packages = packages
+    @projects = projects
+    @watch_count = WatchedItem.where(watchable: @object_to_be_watched).count
   end
 
   private
@@ -28,7 +34,7 @@ class WatchlistComponent < ApplicationComponent
     return project unless package
 
     # maybe package is a multibuild flavor? Try to look up the object of the flavor.
-    package = Package.get_by_project_and_name(project, package, { follow_multibuild: true }) if package.is_a?(String)
+    package = Package.get_by_project_and_name(project.name, package, { follow_multibuild: true }) if package.is_a?(String)
 
     # the package is coming via a project link, don't offer watching it.
     return if package.project != project
@@ -53,17 +59,5 @@ class WatchlistComponent < ApplicationComponent
     when BsRequest
       toggle_watched_item_request_path(number: @current_object.number)
     end
-  end
-
-  def projects
-    @projects ||= ProjectsForWatchlistFinder.new.call(@user)
-  end
-
-  def packages
-    @packages ||= PackagesForWatchlistFinder.new.call(@user)
-  end
-
-  def bs_requests
-    @bs_requests ||= RequestsForWatchlistFinder.new.call(@user)
   end
 end

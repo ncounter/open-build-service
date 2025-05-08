@@ -52,7 +52,7 @@ sub extract_stored {
 sub extract_inflate {
   my ($handle, $size, $csize, $writer) = @_;
   return unless $size > 0;
-  require Compress::Raw::Zlib unless defined &Compress::Raw::Zlib::Inflate;
+  require Compress::Raw::Zlib unless defined &Compress::Raw::Zlib::Inflate::new;
   my ($decomp, $status) = Compress::Raw::Zlib::Inflate->new('-WindowBits' => -Compress::Raw::Zlib::MAX_WBITS(), '-Bufsize' => 65536);
   die("Compress::Raw::Zlib::Inflate::new failed\n") unless $decomp && $status == Compress::Raw::Zlib::Z_OK();
   while ($size > 0 || $csize > 0) {
@@ -81,6 +81,7 @@ sub extract {
   my $lfh = readbytes($handle, 30, $ent->{'lhdroffset'});
   my ($lfh_magic, $lfh_vneed, $lfh_bits, $lfh_comp, $lfh_time, $lfh_date, $lfh_crc, $lfh_csize, $lfh_size, $lfh_fnsize, $lfh_extrasize) = unpack('VvvvvvVVVvv', $lfh);
   die("missing local file header\n") unless $lfh_magic == 0x04034b50;
+  die("$ent->{'name'}: cannot extract encrypted files\n") if $lfh_bits & 1;
   readbytes($handle, $lfh_fnsize + $lfh_extrasize);	# verify file name?
   # can't use lfh size values because they may be in the trailing data descriptor
   if ($lfh_comp == 8) {
@@ -88,7 +89,7 @@ sub extract {
   } elsif ($lfh_comp == 0) {
     extract_stored($handle, $ent->{'size'}, $ent->{'csize'}, $writer);
   } else {
-    die("unsupported compression type $lfh_comp\n");
+    die("$ent->{'name'}: unsupported compression type $lfh_comp\n");
   }
   return $data;
 }
@@ -101,7 +102,17 @@ sub list {
   my $zipsize = $s[7];
   my $eocd = readbytes($handle, 22, $zipsize - 22);
   my ($eocd_magic, $eocd_disk, $eocd_cddisk, $eocd_cdcnt, $eocd_tcdcnt, $cd_size, $cd_offset, $eocd_commentsize) = unpack('VvvvvVVv', $eocd);
-  die("not a (commentless) zip archive\n") unless $eocd_magic == 0x06054b50 && $eocd_commentsize == 0;
+  if ($eocd_magic != 0x06054b50 || $eocd_commentsize != 0) {
+    die("not a zip archive\n") unless $zipsize > 256 + 22;
+    $eocd = readbytes($handle, 22 + 256, $zipsize - (22 + 256));
+    die("not a zip archive\n") unless $eocd =~ /\A(.*)PK\005\006/s;
+    $eocd = substr($eocd, length($1));
+    die("not a zip archive\n") unless length($eocd) > 22;
+    my $commentsize = length($eocd) - 22;
+    ($eocd_magic, $eocd_disk, $eocd_cddisk, $eocd_cdcnt, $eocd_tcdcnt, $cd_size, $cd_offset, $eocd_commentsize) = unpack('VvvvvVVv', $eocd);
+    die("not a zip archive\n") unless $eocd_magic == 0x06054b50 && $eocd_commentsize == $commentsize;
+    $zipsize -= $commentsize;
+  }
   if ($eocd_cdcnt == 0xffff || $eocd_tcdcnt == 0xffff || $cd_size == 0xffffffff || $cd_offset == 0xffffffff) {
     my $eocd64l = readbytes($handle, 20, $zipsize - 42);
     my ($eocd64l_magic, $eocd64l_cddisk, $eocd64_offset, $eocd64_offset_hi, $eocd64l_ndisk) = unpack('VVVVV', $eocd64l);

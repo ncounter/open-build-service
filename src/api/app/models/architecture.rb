@@ -19,7 +19,7 @@ class Architecture < ApplicationRecord
   scope :unavailable, -> { where(available: 0) }
 
   #### Validations macros
-  validates :name, uniqueness: { case_sensitive: false }
+  validates :name, uniqueness: true, length: { maximum: 255 }
   validates :name, presence: true
 
   #### Class methods using self. (public and then private)
@@ -53,6 +53,10 @@ class Architecture < ApplicationRecord
     name
   end
 
+  def to_param
+    name
+  end
+
   private
 
   def discard_cache
@@ -67,7 +71,7 @@ end
 # Table name: architectures
 #
 #  id        :integer          not null, primary key
-#  available :boolean          default(FALSE)
+#  available :boolean          default(FALSE), not null
 #  name      :string(255)      not null, indexed
 #
 # Indexes

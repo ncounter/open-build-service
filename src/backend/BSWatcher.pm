@@ -251,6 +251,17 @@ sub serialize_deljob {
   }
 }
 
+sub serialize_waiting {
+  my ($file) = @_;
+  return @{$serializations_waiting{$file} || []};
+}
+
+sub serlialize_advance {
+  my ($file, $jev) = @_;
+  return unless $serializations_waiting{$file};
+  my @waiting = grep {$_ != $jev} @{$serializations_waiting{$file}};
+  @{$serializations_waiting{$file}} = ($jev, @waiting) if @waiting != @{$serializations_waiting{$file}};
+}
 
 
 ###########################################################################
@@ -371,9 +382,9 @@ sub rpc_authenticate {
     local $BSServerEvents::gev = $jev;
     my $auth;
     eval {
-      $auth = $param->{'authenticator'}->($param, $headers->{'www-authenticate'}, $headers);
+      $auth = BSRPC::call_authenticator($param, $headers->{'www-authenticate'}, $headers);
       if ($auth) {
-        my %myparam = ( %{$ev->{'param'}}, 'authenticator' => undef );
+        my %myparam = ( %{$ev->{'param'}}, 'authenticator_norecurse' => 1);
 	$myparam{'headers'} = [ grep {!/^authorization:/i} @{$myparam{'headers'} || []} ];
         push @{$myparam{'headers'}}, "Authorization: $auth";
 	rpc(\%myparam);
@@ -554,6 +565,7 @@ sub rpc_recv_forward_data_handler {
     # too full! wait till there is more room
     #print "stay=".@stay.", leave=".@leave.", blocking\n";
     $rev->{'paused'} = 1;
+    BSEvents::rem($rev);
     return 0;
   }
 
@@ -595,6 +607,7 @@ sub rpc_recv_forward_data_handler {
     }
     # too full! wait till there is more room
     $rev->{'paused'} = 1;
+    BSEvents::rem($rev);
     return 0;
   }
 
@@ -678,6 +691,7 @@ sub rpc_recv_forward_setup {
     BSEvents::add($jev, $conf->{'replstream_timeout'} || 0);
   } else {
     $jev->{'paused'} = 1;
+    BSEvents::rem($jev);
   }
 }
 
@@ -713,7 +727,7 @@ sub rpc_recv_forward {
   $wev->{'datahandler'} = \&rpc_recv_forward_data_handler;
   $wev->{'closehandler'} = \&rpc_recv_forward_close_handler;
   $ev->{'handler'} = \&BSServerEvents::stream_read_handler;
-  BSEvents::add($ev);
+  BSEvents::add($ev) unless $ev->{'paused'};
   BSEvents::add($wev);	# do this last
 }
 
@@ -918,9 +932,11 @@ sub rpc_recv_handler {
   $ans = $2;
   my %headers;
   BSHTTP::gethead(\%headers, $headers);
-  if ($status =~ /^401[^\d]/ && $ev->{'param'}->{'authenticator'} && $headers{'www-authenticate'}) {
-    rpc_authenticate($ev, $status, $ev->{'param'}->{'authenticator'}, \%headers);
-    return undef;
+  if ($status =~ /^401[^\d]/ && $headers{'www-authenticate'}) {
+    if (!$ev->{'param'}->{'authenticator_norecurse'} && ($BSRPC::authenticator || $ev->{'param'}->{'authenticator'})) {
+      rpc_authenticate($ev, $status, $ev->{'param'}->{'authenticator'} || $BSRPC::authenticator, \%headers);
+      return undef;
+    }
   }
   if ($status =~ /^30[27][^\d]/) {
     rpc_redirect($ev, $headers{'location'});
@@ -1146,9 +1162,9 @@ sub rpc {
     push @xhdrs, 'Content-Type: application/x-www-form-urlencoded';
     push @xhdrs, "Content-Length: ".length($data);
   }
-  if ($param->{'authenticator'} && !grep {/^authorization:/i} @xhdrs) {
+  if (($BSRPC::authenticator || $param->{'authenticator'}) && !grep {/^authorization:/i} @xhdrs) {
     # ask authenticator for cached authorization
-    my $auth = $param->{'authenticator'}->($param);
+    my $auth = BSRPC::call_authenticator($param);
     push @xhdrs, "Authorization: $auth" if $auth;
   }
   BSRPC::addautoheaders(\@xhdrs, $jev->{'autoheaders'} || []);
@@ -1228,6 +1244,7 @@ sub jobstatus {
     $j->{'starttime'} = $req->{'starttime'} if $req->{'starttime'};
     $j->{'peer'} = $req->{'headers'}->{'x-peer'} if $req->{'headers'} && $req->{'headers'}->{'x-peer'};
     $j->{'request'} = substr("$req->{'action'} $req->{'path'}?$req->{'query'}", 0, 1024) if $req->{'action'};
+    $j->{'requestid'} = $req->{'requestid'} if $req->{'requestid'};
   }
   return $j;
 }
@@ -1237,7 +1254,8 @@ sub getstatus {
   my $jev = $BSServerEvents::gev;
   $ret->{'ev'} = $jev->{'id'};
   my $req = $jev->{'request'};
-  $ret->{'starttime'} = $req->{'server'}->{'starttime'};
+  my $server = $req->{'server'};
+  $ret->{'starttime'} = $server->{'starttime'};
   $ret->{'pid'} = $$;
   for my $filename (sort keys %filewatchers) {
     my $fw = {'filename' => $filename, 'state' => $filewatchers_s{$filename}};
@@ -1264,7 +1282,7 @@ sub getstatus {
     }
     push @{$ret->{'serialize'}}, $sz;
   }
-  for my $jev (BSServerEvents::getrequestevents($req->{'server'})) {
+  for my $jev (BSServerEvents::getrequestevents($server)) {
     push @{$ret->{'joblist'}->{'job'}}, jobstatus($jev);
   }
   return $ret;

@@ -7,6 +7,7 @@ require 'active_record/railtie'
 require 'action_mailer/railtie'
 require 'action_controller/railtie'
 require 'action_view/railtie'
+require 'active_storage/engine'
 require 'sprockets/railtie'
 require 'rails/test_unit/railtie'
 
@@ -23,10 +24,10 @@ require 'rails/test_unit/railtie'
 gemfile_in = File.expand_path('../Gemfile.in', __dir__)
 if File.exist?(gemfile_in)
   require 'bundler_ext'
-  BundlerExt.system_require(gemfile_in, *Rails.groups(assets: ['development', 'test']))
+  BundlerExt.system_require(gemfile_in, *Rails.groups(assets: %w[development test]))
 else
   # Assets should be precompiled for production (so we don't need the gems loaded then)
-  Bundler.require(*Rails.groups(assets: ['development', 'test']))
+  Bundler.require(*Rails.groups(assets: %w[development test]))
 end
 
 require_relative '../lib/rabbitmq_bus'
@@ -37,8 +38,8 @@ module OBSApi
     # Application configuration should go into files in config/initializers
     # -- all .rb files in that directory are automatically loaded.
 
-    # Enable rails version 6.1 defaults
-    config.load_defaults(6.1)
+    # Enable rails version 7.0 defaults
+    config.load_defaults 7.0
     # FIXME: This is a known isue in RAILS 6.1 https://github.com/rails/rails/issues/40867
     config.active_record.has_many_inversing = false
 
@@ -89,7 +90,7 @@ module OBSApi
 
     # Use the database for sessions instead of the file system
     # (create the session table with 'rails create_sessions_table')
-    # config.action_controller.session_store = :active_record_store
+    # config.action_controller.session_store :active_record_store
 
     # put the rubygem requirements here for a clean handling
     # rails gems:install (installs the needed gems)
@@ -108,6 +109,10 @@ module OBSApi
 
     config.active_record.cache_versioning = true
     config.active_record.collection_cache_versioning = false
+
+    # Disable partial writes to avoid causing incorrect values
+    # to be inserted when changing the default value of a column.
+    config.active_record.partial_inserts = false
 
     config.action_controller.action_on_unpermitted_parameters = :raise
 
@@ -145,5 +150,8 @@ module OBSApi
     config.view_component.default_preview_layout = 'view_component_previews'
     # Below the preview, display a syntax highlighted source code example of the usage of the view component
     config.view_component.show_previews_source = true
+
+    # Classes required by YAML.safe_load used by paper_trail for loading date and time values
+    config.active_record.yaml_column_permitted_classes = [Date, Time, ActiveSupport::TimeWithZone, ActiveSupport::TimeZone]
   end
 end

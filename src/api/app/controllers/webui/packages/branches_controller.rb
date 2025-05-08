@@ -1,8 +1,8 @@
 module Webui
   module Packages
-    class BranchesController < Packages::MainController
+    class BranchesController < Webui::WebuiController
       before_action :require_login
-      before_action :set_project, only: [:new, :into]
+      before_action :set_project, only: %i[new into]
       before_action :set_package, only: [:new]
 
       after_action :verify_authorized, except: [:create]
@@ -32,9 +32,7 @@ module Webui
           source_project_name = params[:linked_project]
           source_package_name = params[:linked_package]
         else
-          options = { use_source: false, follow_project_links: true, follow_multibuild: true }
-          source_package = Package.get_by_project_and_name(params[:linked_project], params[:linked_package], options)
-
+          source_package = Package.get_by_project_and_name(params[:linked_project], params[:linked_package], use_source: false, follow_multibuild: true)
           source_project_name = source_package.project.name
           source_package_name = source_package.name
           authorize source_package, :create_branch?
@@ -54,7 +52,7 @@ module Webui
 
           unless branch_params[:rev]
             flash[:error] = dirhash['error'] || 'Package has no source revision yet'
-            redirect_back(fallback_location: root_path)
+            redirect_back_or_to root_path
             return
           end
         end
@@ -70,7 +68,7 @@ module Webui
 
         Event::BranchCommand.create(project: source_project_name, package: source_package_name,
                                     targetproject: created_project_name, targetpackage: created_package_name,
-                                    user: User.session!.login)
+                                    user: User.session.login)
 
         branched_package_object = Package.find_by_project_and_name(created_project_name, created_package_name)
 
@@ -85,10 +83,10 @@ module Webui
         redirect_to(package_show_path(project: e.project, package: e.package))
       rescue CreateProjectNoPermission
         flash[:error] = 'Sorry, you are not authorized to create this project.'
-        redirect_back(fallback_location: root_path)
+        redirect_back_or_to root_path
       rescue ArgumentError, Package::UnknownObjectError, Project::UnknownObjectError, APIError, ActiveRecord::RecordInvalid => e
         flash[:error] = "Failed to branch: #{e.message}"
-        redirect_back(fallback_location: root_path)
+        redirect_back_or_to root_path
       end
     end
   end

@@ -8,18 +8,44 @@ module NotificationService
                         'Event::CommentForPackage',
                         'Event::CommentForRequest',
                         'Event::RelationshipCreate',
-                        'Event::RelationshipDelete'].freeze
-    CHANNELS = [:web, :rss].freeze
+                        'Event::RelationshipDelete',
+                        'Event::ReportForProject',
+                        'Event::ReportForPackage',
+                        'Event::ReportForComment',
+                        'Event::ReportForUser',
+                        'Event::ReportForRequest',
+                        'Event::ClearedDecision',
+                        'Event::FavoredDecision',
+                        'Event::WorkflowRunFail',
+                        'Event::AppealCreated',
+                        'Event::AddedUserToGroup',
+                        'Event::RemovedUserFromGroup'].freeze
+    CHANNELS = %i[web rss].freeze
     ALLOWED_NOTIFIABLE_TYPES = {
       'BsRequest' => ::BsRequest,
       'Comment' => ::Comment,
       'Project' => ::Project,
-      'Package' => ::Package
+      'Package' => ::Package,
+      'Report' => ::Report,
+      'Decision' => ::Decision,
+      'WorkflowRun' => ::WorkflowRun,
+      'Appeal' => ::Appeal,
+      'Group' => ::Group
     }.freeze
     ALLOWED_CHANNELS = {
       web: NotificationService::WebChannel,
       rss: NotificationService::RSSChannel
     }.freeze
+    REJECTED_FOR_RSS = ['Event::ReportForProject',
+                        'Event::ReportForPackage',
+                        'Event::ReportForComment',
+                        'Event::ReportForUser',
+                        'Event::ReportForRequest',
+                        'Event::ClearedDecision',
+                        'Event::FavoredDecision',
+                        'Event::WorkflowRunFail',
+                        'Event::AddedUserToGroup',
+                        'Event::RemovedUserFromGroup'].freeze
 
     def initialize(event)
       @event = event
@@ -29,25 +55,30 @@ module NotificationService
       return unless @event.eventtype.in?(EVENTS_TO_NOTIFY)
 
       CHANNELS.each do |channel|
+        next if channel == :rss && @event.eventtype.in?(REJECTED_FOR_RSS)
+
         @event.subscriptions(channel).each do |subscription|
-          create_notification_per_subscription(subscription, channel)
+          create_notification(subscription, channel)
         end
       end
     end
 
     private
 
-    def create_notification_per_subscription(subscription, channel)
-      return unless create_notification?(subscription.subscriber, channel)
+    def create_notification(subscription, channel)
+      return if subscription.subscriber.nil?
+      return if subscription.subscriber.away?
+      return if channel == :rss && subscription.subscriber.rss_secret.blank?
+      return unless notifiable_exists?
+      return if skip_report_notification?(event: @event, subscriber: subscription.subscriber)
 
       ALLOWED_CHANNELS[channel].new(subscription, @event).call
     end
 
-    def create_notification?(subscriber, channel)
-      return false if subscriber.nil? || subscriber.away? || (channel == :rss && !subscriber.try(:rss_token))
-      return false unless notifiable_exists?
+    def skip_report_notification?(event:, subscriber:)
+      return false unless event.is_a?(Event::Report)
 
-      true
+      !ReportPolicy.new(subscriber, Report).notify?
     end
 
     def notifiable_exists?

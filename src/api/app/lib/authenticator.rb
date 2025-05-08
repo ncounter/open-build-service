@@ -36,12 +36,8 @@ class Authenticator
     @user_permissions = nil
   end
 
-  def proxy_mode?
-    CONFIG['proxy_auth_mode'] == :on || CONFIG['ichain_mode'] == :on
-  end
-
   def extract_user
-    if proxy_mode?
+    if ::Configuration.proxy_auth_mode_enabled?
       extract_proxy_user
     else
       extract_auth_user
@@ -72,18 +68,17 @@ class Authenticator
 
   def require_admin
     Rails.logger.debug { "Checking for Admin role for user #{@http_user.login}" }
-    unless @http_user.is_admin?
-      Rails.logger.debug 'not granted!'
-      raise AdminUserRequiredError, 'Requires admin privileges'
-    end
-    true
+    return if @http_user.admin?
+
+    Rails.logger.debug 'not granted!'
+    raise AdminUserRequiredError, 'Requires admin privileges'
   end
 
   def authorization_infos
     # 1. try to get it where mod_rewrite might have put it
     # 2. for Apache/mod_fastcgi with -pass-header Authorization
     # 3. regular location
-    ['X-HTTP_AUTHORIZATION', 'Authorization', 'HTTP_AUTHORIZATION'].each do |header|
+    %w[X-HTTP_AUTHORIZATION Authorization HTTP_AUTHORIZATION].each do |header|
       return request.env[header].to_s.split if request.env.key?(header)
     end
     nil
@@ -215,7 +210,7 @@ class Authenticator
     if @http_user.state == 'confirmed'
       Rails.logger.debug { "USER found: #{@http_user.login}" }
       @user_permissions = Suse::Permission.new(@http_user)
-      return true
+      return
     end
 
     raise InactiveUserError, 'User is registered but not in confirmed state. Your account ' \

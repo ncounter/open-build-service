@@ -43,7 +43,7 @@ our $addrev = sub { die("BSSrcServer::Scmsync::addrev not implemented\n") };
 #
 sub deletepackage {
   my ($cgi, $projid, $packid) = @_;
-  local $cgi->{'comment'} ||= 'package was deleted';
+  local $cgi->{'comment'} = $cgi->{'comment'} || 'package was deleted';
   # kill upload revision
   unlink("$projectsdir/$projid.pkg/$packid.upload-MD5SUMS");
   # add delete commit to both source and meta
@@ -57,7 +57,7 @@ sub deletepackage {
 
 sub undeletepackage {
   my ($cgi, $projid, $packid) = @_;
-  local $cgi->{'comment'} ||= 'package was undeleted';
+  local $cgi->{'comment'} = $cgi->{'comment'} || 'package was undeleted';
   BSRevision::undelete_rev($cgi, $projid, $packid, "$projectsdir/$projid.pkg/$packid.mrev.del", "$projectsdir/$projid.pkg/$packid.mrev");
   if (-s "$projectsdir/$projid.pkg/$packid.rev.del") {
     BSRevision::undelete_rev($cgi, $projid, $packid, "$projectsdir/$projid.pkg/$packid.rev.del", "$projectsdir/$projid.pkg/$packid.rev");
@@ -66,15 +66,16 @@ sub undeletepackage {
 
 sub putpackage {
   my ($cgi, $projid, $packid, $pack) = @_;
-  local $cgi->{'comment'} ||= 'package was updated';
+  local $cgi->{'comment'} = $cgi->{'comment'} || 'package was updated';
   mkdir_p($uploaddir);
   writexml("$uploaddir/$$.2", undef, $pack, $BSXML::pack);
   BSRevision::addrev_meta_replace($cgi, $projid, $packid, [ "$uploaddir/$$.2", "$projectsdir/$projid.pkg/$packid.xml", '_meta' ]);
 }
 
 sub putconfig {
-  my ($cgi, $projid, $config) = @_;
-  local $cgi->{'comment'} ||= 'config was updated';
+  my ($cgi, $projid, $config, $info) = @_;
+  local $cgi->{'comment'} = $cgi->{'comment'} || 'config was updated';
+  $cgi->{'comment'} .= " [info=$info]" if $info;
   if (defined($config) && $config ne '') {
     mkdir_p($uploaddir);
     writestr("$uploaddir/$$.2", undef, $config);
@@ -82,6 +83,13 @@ sub putconfig {
   } else {
     BSRevision::addrev_local_replace($cgi, $projid, undef, [ undef, "$projectsdir/$projid.conf", '_config' ]);
   }
+}
+
+sub putprojectinfo {
+  my ($cgi, $projid, $info) = @_;
+  local $cgi->{'comment'} = $cgi->{'comment'} || 'projectinfo update';
+  $cgi->{'comment'} .= " [info=$info]" if $info;
+  BSRevision::addrev_local_replace($cgi, $projid, undef, []);
 }
 
 #
@@ -96,7 +104,7 @@ sub sync_locallink {
   };
   my $linkxml = BSUtil::toxml($link, $BSXML::link);
   return if $files && scalar(keys %$files) == 1 && $files->{'_link'} eq Digest::MD5::md5_hex($linkxml);
-  local $cgi->{'comment'} ||= 'update _link';
+  local $cgi->{'comment'} = $cgi->{'comment'} || 'update _link';
   mkdir_p($uploaddir);
   writestr("$uploaddir/sync_locallink$$", undef, $linkxml);
   $files = {};
@@ -128,7 +136,7 @@ sub sync_package {
   }
   my $oldpack = BSRevision::readpack_local($projid, $packid, 1);
 
-  if ($undeleted || !$oldpack || !BSUtil::identical($pack, $oldpack)) {
+  if ($undeleted || !$oldpack || !BSUtil::identical($pack, $oldpack, $pack->{'scmsync'} ? { 'url' => 1 } : undef)) {
     print "scmsync: update $projid/$packid\n";
     putpackage($cgi, $projid, $packid, $pack);
     my %except = map {$_ => 1} qw{title description devel person group url};
@@ -156,7 +164,7 @@ sub sync_package {
 }
 
 sub sync_config {
-  my ($cgi, $projid, $config) = @_;
+  my ($cgi, $projid, $config, $info) = @_;
 
   if (!defined($config) || $config eq '') {
     return unless -e "$projectsdir/$projid.conf";
@@ -167,9 +175,24 @@ sub sync_config {
     return if $oldconfig eq $config;
     print "scmsync: update $projid/_config\n";
   }
-  putconfig($cgi, $projid, $config);
+  putconfig($cgi, $projid, $config, $info);
   $notify_repservers->('project', $projid);
   $notify->("SRCSRV_UPDATE_PROJECT_CONFIG", { "project" => $projid, "sender" => ($cgi->{'user'} || "unknown") });
+}
+
+sub sync_projectinfo {
+  my ($cgi, $projid, $info) = @_;
+  my $lastrev = eval { BSRevision::getrev_local($projid, '_project') };
+  return if $lastrev && $lastrev->{'comment'} && $lastrev->{'comment'} =~ /\[info=([0-9a-f]{1,128})\]$/ && $info eq $1;
+  putprojectinfo($cgi, $projid, $info);
+}
+
+sub cpio_extract {
+  my ($cpiofd, $files, $fn, $maxsize) = @_;
+  my $ent = $files->{$fn};
+  die("$fn: not in cpio archive\n") unless $ent;
+  die("$fn: size is too big\n") if $ent->{'size'} > $maxsize;
+  return BSCpio::extract($cpiofd, $ent);
 }
 
 sub sync_project {
@@ -183,16 +206,18 @@ sub sync_project {
   my $cpio = BSCpio::list($cpiofd);
   my %files = map {$_->{'name'} => $_}  grep {$_->{'cpiotype'} == 8} @$cpio;
 
+  # ensure that the blocked handling sees all changes from new commit
+  # at the same time
+  $notify_repservers->('suspendproject', $projid, undef, 'suspend for scmsync');
+
   # update all packages
   for my $packid (grep {s/\.xml$//} sort keys %files) {
-    my $ent = $files{"$packid.xml"};
     my $pack;
     eval {
       BSVerify::verify_packid($packid);
-      die("bad package '$packid'\n") if $packid eq '_project' || $packid eq '_product';
-      die("bad package '$packid'\n") if $packid =~ /(?<!^_product)(?<!^_patchinfo):./;
-      die("$packid: xml is too big\n") if $ent->{'size'} > 1000000;
-      my $packxml = BSCpio::extract($cpiofd, $ent);
+      die("bad package name\n") if $packid eq '_project' || $packid eq '_product';
+      die("bad package name\n") if $packid =~ /(?<!^_product)(?<!^_patchinfo):./;
+      my $packxml = cpio_extract($cpiofd, \%files, "$packid.xml", 1000000);
       $pack = BSUtil::fromxml($packxml, $BSXML::pack);
       $pack->{'project'} = $projid;
       $pack->{'name'} = $packid;
@@ -201,31 +226,38 @@ sub sync_project {
       BSVerify::verify_pack($pack);
     };
     if ($@) {
-      warn($@);
+      warn("$packid: $@");
       next;
     }
-    my $linkent = $files{"$packid.link"};
     my $link;
-    if ($linkent && $linkent->{'size'} < 100000) {
+    if ($files{"$packid.link"}) {
       eval {
-	my $linkxml = BSCpio::extract($cpiofd, $linkent);
+        my $linkxml =  cpio_extract($cpiofd, \%files, "$packid.link", 100000);
 	$link = BSUtil::fromxml($linkxml, $BSXML::link);
 	BSVerify::verify_link($link);
 	die("link must not contain a project\n") if exists $link->{'project'};
       };
       if ($@) {
-	warn($@);
+	warn("$packid: $@");
 	undef $link;
       }
     }
     if ($link && $pack->{'scmsync'}) {
-      warn("ignoring link file as the package has a scmsync element\n");
+      warn("$packid: ignoring link file as the package has an scmsync element\n");
       undef $link;
     }
     my $info;
-    my $infoent = $files{"$packid.info"};
-    $info = BSCpio::extract($cpiofd, $infoent) if $infoent && $infoent->{'size'} < 100000;
-    chomp $info if $info;
+    if ($files{"$packid.info"}) {
+      eval {
+        $info = cpio_extract($cpiofd, \%files, "$packid.info", 100000);
+	chomp $info;
+	die("bad info data\n") if $info =~ /[\000-\037\177]/s;
+      };
+      if ($@) {
+	warn("$packid: $@");
+	undef $info;
+      }
+    }
     sync_package($cgi, $projid, $packid, $pack, $info, $link);
   }
 
@@ -234,20 +266,27 @@ sub sync_project {
     sync_package($cgi, $projid, $packid, undef) unless $files{"$packid.xml"};
   }
 
+  my $info;
+  if ($files{'_scmsync.obsinfo'}) {
+    my $obsinfo = eval { cpio_extract($cpiofd, \%files, '_scmsync.obsinfo', 1000000) };
+    $info = $1 if $obsinfo && $obsinfo =~ /^commit: ([0-9a-f]{1,128})$/m;
+  }
+
   # update the project config
   my $config = '';
   if ($files{'_config'}) {
-    my $ent = $files{'_config'};
     eval {
-      die("_config: size is too big\n") if $ent->{'size'} > 1000000;
-      $config = BSCpio::extract($cpiofd, $ent);
+      $config = cpio_extract($cpiofd, \%files, '_config', 1000000);
     };
     if ($@) {
       warn($@);
-      $config = undef;
+      undef $config;
     }
   }
-  sync_config($cgi, $projid, $config) if defined $config;
+  sync_config($cgi, $projid, $config, $info) if defined $config;
+  sync_projectinfo($cgi, $projid, $info) if $info;
+
+  $notify_repservers->('resumeproject', $projid, undef, 'suspend for scmsync');
 
   return { 'project' => $projid, 'package' => '_project', 'rev' => 'obsscm' };
 }

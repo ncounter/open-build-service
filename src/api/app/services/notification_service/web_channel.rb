@@ -5,7 +5,12 @@ module NotificationService
       'BsRequest' => OutdatedNotificationsFinder::BsRequest,
       'Comment' => OutdatedNotificationsFinder::Comment,
       'Project' => OutdatedNotificationsFinder::Project,
-      'Package' => OutdatedNotificationsFinder::Package
+      'Package' => OutdatedNotificationsFinder::Package,
+      'Report' => OutdatedNotificationsFinder::Report,
+      'Decision' => OutdatedNotificationsFinder::Decision,
+      'Appeal' => OutdatedNotificationsFinder::Appeal,
+      'WorkflowRun' => OutdatedNotificationsFinder::WorkflowRun,
+      'Group' => OutdatedNotificationsFinder::Group
     }.freeze
 
     def initialize(subscription, event)
@@ -26,6 +31,8 @@ module NotificationService
         default_subscription = EventSubscription.defaults.find_by(options)
 
         @subscription.subscriber.web_users.map do |user|
+          next if user.blocked_users.include?(@event.originator)
+
           finder = finder_class.new(notification_scope(user: user), @parameters_for_notification.merge!(subscriber: user))
 
           renew_notification(finder: finder) if subscribed?(user, options, default_subscription)
@@ -64,7 +71,7 @@ module NotificationService
     end
 
     def notification_scope(user:)
-      NotificationsFinder.new(user.notifications.for_web).with_notifiable
+      user.notifications.for_web.with_notifiable
     end
 
     def parameters(oldest_notification)

@@ -1,4 +1,3 @@
-# rubocop:disable Layout/LineLength
 # rubocop:disable Metrics/ClassLength
 require File.expand_path(File.dirname(__FILE__) + '/..') + '/test_helper'
 require 'request_controller'
@@ -54,10 +53,16 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
   def test_invalid_command
     post '/request?cmd=INVALID'
-    assert_response 401
+    assert_response :unauthorized
     login_king
-    post '/request?cmd=INVALID'
-    assert_response 400
+    post '/request?cmd=INVALID', params: '<request>
+                                            <action type="submit">
+                                              <source project="project1" package="package1" />
+                                              <target project="project2" package="package2" />
+                                            </action>
+                                            <description>Description</description>
+                                          </request>'
+    assert_response :bad_request
     assert_xml_tag(tag: 'status', attributes: { code: 'unknown_command' })
   end
 
@@ -122,19 +127,19 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
   def test_get_invalid_1
     prepare_request_with_user('Iggy', 'xxx')
     get '/request/0815'
-    assert_response 401
+    assert_response :unauthorized
   end
 
   def test_create_invalid
     login_king
     post '/request?cmd=create', params: 'GRFZL'
-    assert_response 400
+    assert_response :bad_request
 
     reset_auth
     # make sure requests from not valid users do not pass
     req = load_backend_file('request/1')
     post '/request?cmd=create', params: req
-    assert_response 401
+    assert_response :unauthorized
   end
 
   def test_submit_request_of_new_package_with_devel_package
@@ -175,7 +180,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     # Ensure that requests can't be accepted twice
     post "/request/#{id}?cmd=changestate&newstate=accepted&comment=approved&force=1"
-    assert_response 403
+    assert_response :forbidden
     assert_select 'status', code: 'post_request_no_permission' do
       assert_select 'summary', 'change state from an accepted state is not allowed.'
     end
@@ -237,10 +242,10 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     prepare_request_with_user('Iggy', 'buildservice')
     post '/source/home:Iggy/NEW_PACKAGE', params: { cmd: :branch }
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'unknown_package' })
     post '/source/home:Iggy/TestPack', params: { cmd: :branch, missingok: 'true' }
-    assert_response 400
+    assert_response :bad_request
     assert_xml_tag(tag: 'status', attributes: { code: 'not_missing' })
     post '/source/home:Iggy/NEW_PACKAGE', params: { cmd: :branch, missingok: 'true' }
     assert_response :success
@@ -272,7 +277,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     # create more history entries prio change, decline, reopen and finally accept it
     post "/request/#{id}?cmd=setpriority&priority=ILLEGAL&comment=dontcare"
-    assert_response 400
+    assert_response :bad_request
     assert_xml_tag(tag: 'status', attributes: { code: 'request_save_error' })
     assert_xml_tag(tag: 'summary', content: "Illegal priority 'ILLEGAL'")
     post "/request/#{id}?cmd=setpriority&priority=low&comment=dontcare"
@@ -334,7 +339,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert_equal(node.elements('state').first.value('when'), node.elements('history').last.value('when'), 'Current state is has NOT same time as last history item')
     oldhistory = nil
     node.elements('history') do |h|
-      assert((h.value('when') > oldhistory.value('when')), 'Current history is not newer than the former history') unless h
+      assert(h.value('when') > oldhistory.value('when'), 'Current history is not newer than the former history') unless h
       oldhistory = h
     end
 
@@ -428,7 +433,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # accepting request fails in a valid way
     login_king
     post "/request/#{id1}?cmd=changestate&newstate=accepted&comment=review1&force=1"
-    assert_response 400
+    assert_response :bad_request
     assert_xml_tag(tag: 'status', attributes: { code: 'expand_error' })
 
     # new requests are not possible anymore
@@ -440,7 +445,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
                                    </action>
                                    <state name="new" />
                                  </request>'
-    assert_response 400
+    assert_response :bad_request
     assert_xml_tag(tag: 'status', attributes: { code: 'expand_error' })
     post '/request?cmd=create', params: '<request>
                                    <action type="submit">
@@ -449,7 +454,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
                                    </action>
                                    <state name="new" />
                                  </request>'
-    assert_response 400
+    assert_response :bad_request
     assert_xml_tag(tag: 'status', attributes: { code: 'expand_error' })
 
     delete '/source/home:Iggy/TestPack.DELETE'
@@ -465,39 +470,39 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     login_Iggy
     post '/request?cmd=create', params: load_backend_file('request/no_such_project')
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'unknown_project' })
 
     post '/request?cmd=create', params: load_backend_file('request/no_such_package')
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'unknown_package' })
 
     post '/request?cmd=create', params: load_backend_file('request/no_such_user')
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'not_found' }, child: { content: /Couldn.t find User/ })
 
     post '/request?cmd=create', params: load_backend_file('request/no_such_group')
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'not_found' }, child: { content: /Couldn.t find Group/ })
 
     post '/request?cmd=create', params: load_backend_file('request/no_such_role')
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'not_found' }, child: { content: /Couldn.t find Role/ })
 
     post '/request?cmd=create', params: load_backend_file('request/no_such_target_project')
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'unknown_project' })
 
     post '/request?cmd=create', params: load_backend_file('request/no_such_target_package')
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'unknown_package' })
 
     post '/request?cmd=create', params: load_backend_file('request/missing_role')
-    assert_response 404
+    assert_response :not_found
     assert_select 'status[code] > summary', /No role specified/
 
     post '/request?cmd=create', params: load_backend_file('request/failing_cleanup_due_devel_package')
-    assert_response 400
+    assert_response :bad_request
     assert_select 'status[code] > summary', /Package is used by following packages as devel package:/
   end
 
@@ -524,23 +529,23 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert_xml_tag(tag: 'group', attributes: { name: 'test_group' })
 
     post '/request?cmd=create', params: load_backend_file('request/set_bugowner_fail')
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'unknown_package' })
 
     post '/request?cmd=create', params: load_backend_file('request/set_bugowner_fail_unknown_user')
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'not_found' })
 
     post '/request?cmd=create', params: load_backend_file('request/set_bugowner_fail_unknown_group')
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'not_found' })
 
     # test direct put
     login_Iggy
     put "/request/#{id}", params: load_backend_file('request/set_bugowner')
-    assert_response 403
+    assert_response :forbidden
     put "/request/#{id2}", params: load_backend_file('request/set_bugowner_group')
-    assert_response 403
+    assert_response :forbidden
 
     login_king
     put "/request/#{id}", params: load_backend_file('request/set_bugowner')
@@ -590,7 +595,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
                                    </action>
                                    <state name="new" />
                                  </request>'
-    assert_response 400
+    assert_response :bad_request
     assert_xml_tag(tag: 'status', attributes: { code: 'invalid_record' })
 
     post '/request?cmd=create', params: '<request>
@@ -600,7 +605,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
                                    </action>
                                    <state name="new" />
                                  </request>'
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'not_found' })
 
     post '/request?cmd=create', params: '<request>
@@ -610,7 +615,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
                                    </action>
                                    <state name="new" />
                                  </request>'
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'not_found' })
 
     # cleanup
@@ -639,7 +644,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     login_Iggy
     post "/request/#{id}?cmd=changestate&newstate=accepted"
-    assert_response 403
+    assert_response :forbidden
     assert_xml_tag(tag: 'status', attributes: { code: 'post_request_no_permission' })
     get '/source/home:Iggy:Test/_meta'
     assert_response :success
@@ -674,7 +679,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     login_Iggy
     post "/request/#{id}?cmd=changestate&newstate=accepted"
-    assert_response 403
+    assert_response :forbidden
     assert_xml_tag(tag: 'status', attributes: { code: 'post_request_no_permission' })
     get '/source/home:Iggy:Test/pack/_meta'
     assert_response :success
@@ -696,12 +701,12 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # try it without anonymous - login required
     post '/request?cmd=create', params: load_backend_file('request/add_role')
     assert_xml_tag tag: 'status', attributes: { code: 'authentication_required' }
-    assert_response 401
+    assert_response :unauthorized
 
     # now try as webui if we get a different error
     post '/request?cmd=create', params: load_backend_file('request/add_role'), headers: { 'HTTP_USER_AGENT' => 'obs-webui-something' }
     assert_xml_tag tag: 'status', attributes: { code: 'anonymous_user' }
-    assert_response 401
+    assert_response :unauthorized
   end
 
   def test_add_role_request
@@ -716,11 +721,11 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     post '/request?cmd=create', params: load_backend_file('request/add_role_fail')
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'unknown_package' })
 
     post '/request?cmd=create', params: load_backend_file('request/add_role_fail')
-    assert_response 404
+    assert_response :not_found
   end
 
   def test_create_request_clone_and_superseed_it
@@ -776,7 +781,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert_xml_tag(tag: 'review', attributes: { by_user: 'tom', when: '2010-07-12T00:00:00' })
     # try update comment
     post "/request/#{id}?cmd=changereviewstate&newstate=new&by_user=tom&comment=blahfasel"
-    assert_response 403
+    assert_response :forbidden
 
     # update comment for real
     request = BsRequest.find_by_number(id)
@@ -796,7 +801,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     # invalid state
     post "/request/#{id}?cmd=changereviewstate&newstate=INVALID&by_user=tom&comment=blahfasel"
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'request_not_modifiable' })
 
     # superseded review
@@ -810,7 +815,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     # another final state is not allowed
     post "/request/#{id}?cmd=changereviewstate&newstate=accepted&by_user=tom&comment=blahfasel"
-    assert_response 403
+    assert_response :forbidden
     assert_xml_tag(tag: 'status', attributes: { code: 'review_change_state_no_permission' })
     assert_xml_tag(tag: 'summary', content: 'The request is neither in state review nor new')
 
@@ -828,8 +833,8 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
           <source project="home:Iggy" package="TestPack" rev="1"/>
           <target project="home:fred" package="foopkg"/>
         </action>
-        <review by_group="test_group"/>
-        <review by_user="adrian"/>
+        <review state="new" by_group="test_group"/>
+        <review state="new" by_user="adrian"/>
       </request>
     XML_REQUEST
     post '/request?cmd=create', params: req
@@ -842,7 +847,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     login_tom
     # try to approve without being empowered
     post "/request/#{id}?cmd=approve"
-    assert_response 403
+    assert_response :forbidden
 
     # approve for real
     login_fred # is the maintainer of target
@@ -886,15 +891,15 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
           <source project="home:Iggy" package="TestPack" rev="1"/>
           <target project="home:fred" package="foopkg"/>
         </action>
-        <review by_group="test_group"/>
-        <state approver="%<approver>s"/>
+        <review state="new" by_group="test_group"/>
+        <state name="new" approver="%<approver>s"/>
       </request>
     XML_REQUEST
 
     login_Iggy
     # request creation fails because we are not admin
     post '/request?cmd=create', params: format(req_template, approver: 'fred')
-    assert_response 403
+    assert_response :forbidden
     assert_xml_tag(tag: 'status', attributes: { code: 'create_bs_request_not_authorized' })
     assert_xml_tag(tag: 'summary', content: 'Sorry, you are not authorized to create this bs request.')
 
@@ -937,7 +942,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     login_tom
     post "/request/#{id}?cmd=changestate&newstate=superseded&superseded_by=1"
-    assert_response 403
+    assert_response :forbidden
     assert_xml_tag(tag: 'status', attributes: { code: 'post_request_no_permission' })
 
     # target says supersede it due to another existing request
@@ -984,12 +989,12 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     login_tom
     post "/request/#{id}?cmd=changereviewstate&newstate=declined"
-    assert_response 400
+    assert_response :bad_request
     assert_xml_tag(tag: 'status', attributes: { code: 'review_not_specified' })
     post "/request/#{id}?cmd=changereviewstate&newstate=declined&by_user=tom"
     assert_response :success
     post "/request/#{id}?cmd=changereviewstate&newstate=accepted&by_user=tom"
-    assert_response 403
+    assert_response :forbidden
     assert_xml_tag(tag: 'status', attributes: { code: 'review_change_state_no_permission' })
 
     get "/request/#{id}"
@@ -998,7 +1003,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     # add review not permitted anymore
     post "/request/#{id}?cmd=addreview&by_user=king"
-    assert_response 403
+    assert_response :forbidden
     assert_xml_tag(tag: 'status', attributes: { code: 'review_change_state_no_permission' })
   end
 
@@ -1174,7 +1179,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert_xml_tag(tag: 'review', attributes: { state: 'accepted', by_group: 'test_group' })
     # stealing the review of king is not working
     post "/request/#{id}?by_group=test_group&cmd=assignreview&reviewer=king&revert=1", params: 'try to kill it'
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag tag: 'summary', content: 'Not an assigned review'
     # Iggy went home without telling....
     post "/request/#{id}?by_group=test_group&cmd=assignreview&reviewer=Iggy&revert=1", params: 'ups, drop it again'
@@ -1273,7 +1278,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # change review not permitted anymore
     login_tom
     post "/request/#{id}?cmd=changereviewstate&newstate=declined&by_group=test_group"
-    assert_response 403
+    assert_response :forbidden
     assert_xml_tag tag: 'status', attributes: { code: 'review_change_state_no_permission' }
 
     # search this request and verify that all reviews got rendered.
@@ -1299,7 +1304,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # claim to be someone else
     login_Iggy
     post '/request?cmd=create', params: req
-    assert_response 400
+    assert_response :bad_request
     assert_xml_tag(tag: 'status', attributes: { code: 'request_save_error' })
     assert_xml_tag(tag: 'summary', content: 'Admin permissions required to set request creator to foreign user')
 
@@ -1352,7 +1357,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     # collection view
     get '/request?view=collection'
-    assert_response 404
+    assert_response :not_found
 
     # collection of user involved requests
     get '/request?view=collection&user=Iggy&states=new,review'
@@ -1508,7 +1513,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # try to approve change_devel
     login_adrian
     post "/request/#{id}?cmd=changestate&newstate=accepted"
-    assert_response 403
+    assert_response :forbidden
 
     login_Iggy
     post "/request/#{id}?cmd=changestate&newstate=accepted"
@@ -1533,7 +1538,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # try to delete package via old request, it should fail
     login_king
     post "/request/#{iddelete}?cmd=changestate&newstate=accepted"
-    assert_response 400
+    assert_response :bad_request
 
     # cleanup
     put '/source/home:Iggy/TestPack/_meta', params: oldmeta.dup
@@ -1556,7 +1561,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
          </request>'
 
     post '/request?cmd=create', params: rq
-    assert_response 403
+    assert_response :forbidden
     assert_match(/Go Away/, @response.body)
     assert_xml_tag tag: 'status', attributes: { code: 'request_rejected' }
 
@@ -1564,7 +1569,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     post '/source/home:Iggy/_attribute', params: "<attributes><attribute namespace='OBS' name='RejectRequests'> <value>No Submits</value> <value>submit</value> </attribute> </attributes>"
     assert_response :success
     post '/request?cmd=create', params: rq
-    assert_response 403
+    assert_response :forbidden
     assert_match(/No Submits/, @response.body)
     assert_xml_tag tag: 'status', attributes: { code: 'request_rejected' }
     # but it works when blocking only for others
@@ -1578,7 +1583,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     post '/request?cmd=create', params: rq
-    assert_response 403
+    assert_response :forbidden
     assert_match(/Package blocked/, @response.body)
     assert_xml_tag tag: 'status', attributes: { code: 'request_rejected' }
     # remove project attribute lock
@@ -1586,7 +1591,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     # still not working
     post '/request?cmd=create', params: rq
-    assert_response 403
+    assert_response :forbidden
     assert_match(/Package blocked/, @response.body)
     assert_xml_tag tag: 'status', attributes: { code: 'request_rejected' }
 
@@ -1594,11 +1599,12 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     post '/source/home:Iggy/TestPack/_attribute', params: "<attributes><attribute namespace='OBS' name='RejectRequests'> <value>No Submits</value> <value>submit</value> </attribute> </attributes>"
     assert_response :success
     post '/request?cmd=create', params: rq
-    assert_response 403
+    assert_response :forbidden
     assert_match(/No Submits/, @response.body)
     assert_xml_tag tag: 'status', attributes: { code: 'request_rejected' }
     # but it works when blocking only for others
-    post '/source/home:Iggy/TestPack/_attribute', params: "<attributes><attribute namespace='OBS' name='RejectRequests'> <value>Submits welcome</value> <value>delete</value> <value>set_bugowner</value> </attribute> </attributes>"
+    post '/source/home:Iggy/TestPack/_attribute',
+         params: "<attributes><attribute namespace='OBS' name='RejectRequests'> <value>Submits welcome</value> <value>delete</value> <value>set_bugowner</value> </attribute> </attributes>"
     assert_response :success
     post '/request?cmd=create', params: rq
     assert_response :success
@@ -1610,30 +1616,6 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  # osc is still submitting with old style by default
-  def test_old_style_submit_request
-    prepare_request_with_user('hidden_homer', 'buildservice')
-    post '/request?cmd=create', params: '<request type="submit">
-                                   <submit>
-                                     <source project="HiddenProject" package="pack" rev="1"/>
-                                     <target project="kde4" package="DUMMY"/>
-                                   </submit>
-                                   <state name="new" />
-                                 </request>'
-    assert_response :success
-    node = Xmlhash.parse(@response.body)
-    assert node['id']
-    id = node.value(:id)
-    post "/request/#{id}?cmd=changestate&newstate=revoked"
-    assert_response :success
-
-    # test that old style request got converted
-    get "/request/#{id}"
-    assert_response :success
-    assert_no_xml_tag tag: 'submit'
-    assert_xml_tag tag: 'action', attributes: { type: 'submit' }
-  end
-
   def test_submit_request_from_hidden_project_and_hidden_source
     login_tom
     post '/request?cmd=create', params: '<request>
@@ -1643,7 +1625,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
                                    </action>
                                    <state name="new" />
                                  </request>'
-    assert_response 404
+    assert_response :not_found
     post '/request?cmd=create', params: '<request>
                                    <action type="submit">
                                      <source project="SourceprotectedProject" package="pack" rev="1"/>
@@ -1651,7 +1633,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
                                    </action>
                                    <state name="new" />
                                  </request>'
-    assert_response 403
+    assert_response :forbidden
 
     prepare_request_with_user('hidden_homer', 'buildservice')
     post '/request?cmd=create', params: '<request>
@@ -1717,7 +1699,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # test revoke
     login_adrian
     post "/request/#{id1}?cmd=changestate&newstate=declined"
-    assert_response 403
+    assert_response :forbidden
   end
 
   def test_auto_revoke_when_source_gets_removed_submit
@@ -1764,7 +1746,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # test decline and revoke
     login_adrian
     post "/request/#{id1}?cmd=changestate&newstate=declined"
-    assert_response 403 # set back is not allowed
+    assert_response :forbidden # set back is not allowed
   end
 
   def test_revoke_and_decline_when_projects_are_not_existing_anymore
@@ -1779,7 +1761,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     # missing source project
     post '/request/1?cmd=changestate&newstate=declined'
-    assert_response 403
+    assert_response :forbidden
 
     login_adrian
     post '/request/1?cmd=changestate&newstate=declined'
@@ -1796,7 +1778,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
           </request>"
 
     post '/request?cmd=create', params: req
-    assert_response 401
+    assert_response :unauthorized
     assert_select 'status[code] > summary', /Authentication required/
 
     # create request by non-maintainer => validate created review item
@@ -1831,7 +1813,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     login_Iggy
     req = load_backend_file('request/submit_without_target')
     post '/request?cmd=create', params: req
-    assert_response 400
+    assert_response :bad_request
     assert_xml_tag(tag: 'status', attributes: { code: 'unknown_target_project' })
 
     req = load_backend_file('request/works')
@@ -1846,7 +1828,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # add reviewer
     login_tom
     post "/request/#{id}?cmd=addreview&by_user=adrian"
-    assert_response 403
+    assert_response :forbidden
     assert_xml_tag(tag: 'status', attributes: { code: 'add_review_not_permitted' })
 
     login_Iggy
@@ -1871,7 +1853,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     # invalid review, by_project is missing
     post "/request/#{id}?cmd=addreview&by_package=kdelibs"
-    assert_response 400
+    assert_response :bad_request
 
     post "/request/#{id}?cmd=addreview&by_project=kde4&by_package=kdelibs"
     assert_response :success
@@ -1888,13 +1870,13 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # and revoke it
     reset_auth
     post "/request/#{id}?cmd=changestate&newstate=revoked"
-    assert_response 401
+    assert_response :unauthorized
 
     login_tom
     post "/request/#{id}?cmd=changestate&newstate=revoked"
-    assert_response 403
+    assert_response :forbidden
     post '/request/ILLEGAL_CONTENT?cmd=changestate&newstate=revoked'
-    assert_response 404
+    assert_response :not_found
     # Rails does not allow /request/:id to match non-integers, so there is no XML generated for 404
     # assert_xml_tag tag: 'status', attributes: {code: 'not_found'}
 
@@ -1909,11 +1891,11 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # decline by_package review
     reset_auth
     post "/request/#{id_by_package}?cmd=changereviewstate&newstate=declined&by_project=home:Iggy&by_package=TestPack"
-    assert_response 401
+    assert_response :unauthorized
 
     login_tom
     post "/request/#{id_by_package}?cmd=changereviewstate&newstate=declined&by_project=home:Iggy&by_package=TestPack"
-    assert_response 403
+    assert_response :forbidden
 
     login_Iggy
     post "/request/#{id_by_package}?cmd=changereviewstate&newstate=declined&by_project=home:Iggy&by_package=TestPack"
@@ -1936,7 +1918,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
   def test_submit_cleanup_in_not_writable_source
     login_Iggy
-    ['cleanup', 'update'].each do |modify|
+    %w[cleanup update].each do |modify|
       req = "<request>
               <action type='submit'>
                 <source project='Apache' package='apache2' rev='1' />
@@ -1948,7 +1930,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
               <description/>
             </request>"
       post '/request?cmd=create', params: req
-      assert_response 403
+      assert_response :forbidden
       assert_xml_tag(tag: 'status', attributes: { code: 'lacking_maintainership' })
     end
 
@@ -1963,7 +1945,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
             <description/>
           </request>"
     post '/request?cmd=create', params: req
-    assert_response 403
+    assert_response :forbidden
     assert_xml_tag(tag: 'status', attributes: { code: 'lacking_maintainership' })
   end
 
@@ -1992,7 +1974,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert id.present?
     # no write permission
     post "/request/#{id}?cmd=changestate&newstate=accepted&comment=But+I+want+it"
-    assert_response 403
+    assert_response :forbidden
     post "/request/#{id}?cmd=changestate&newstate=revoked&comment=take+it+back"
     assert_response :success
     post "/request/#{id}?cmd=changestate&newstate=new&comment=try+again"
@@ -2005,10 +1987,10 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     login_Iggy
     post "/request/#{id}?cmd=changestate&newstate=accepted&comment=But+I+want+it"
-    assert_response 403
+    assert_response :forbidden
     assert_xml_tag(tag: 'status', attributes: { code: 'post_request_no_permission' })
     post "/request/#{id}?cmd=changestate&newstate=accepted&force=1&comment=But+I+want+it"
-    assert_response 403
+    assert_response :forbidden
     assert_xml_tag(tag: 'status', attributes: { code: 'post_request_no_permission' })
 
     delete '/source/home:Iggy:Apache'
@@ -2016,7 +1998,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
   end
 
   def test_reopen_a_review_declined_request
-    ['new', 'review'].each do |newstate|
+    %w[new review].each do |newstate|
       login_Iggy
       post '/source/Apache/apache2', params: { cmd: :branch }
       assert_response :success
@@ -2100,11 +2082,11 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # and reopen it as a non-maintainer is not working
     login_adrian
     post "/request/#{id}?cmd=changestate&newstate=new"
-    assert_response 403
+    assert_response :forbidden
     # and reopen it as a non-source-maintainer is not working
     prepare_request_with_user('fredlibs', 'buildservice')
     post "/request/#{id}?cmd=changestate&newstate=new"
-    assert_response 403
+    assert_response :forbidden
 
     # reopen it again
     login_Iggy
@@ -2137,7 +2119,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     # and reopen it as a non-maintainer is not working
     post "/request/#{id}?cmd=changestate&newstate=new"
-    assert_response 403
+    assert_response :forbidden
 
     # and reopen it as a different maintainer from target
     prepare_request_with_user('fredlibs', 'buildservice')
@@ -2175,7 +2157,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     get "/request/#{id}"
     login_fred
     post "/request/#{id}?cmd=changestate&newstate=accepted"
-    assert_response 403
+    assert_response :forbidden
     assert_match(/Request is in review state/, @response.body)
 
     # approve reviews
@@ -2206,10 +2188,10 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # reopen the review
     login_tom
     post "/request/#{id}?cmd=changereviewstate&newstate=new&by_group=INEXISTENT"
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'not_found' })
     post "/request/#{id}?cmd=changereviewstate&newstate=new&by_user=INEXISTENT"
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'not_found' })
     post "/request/#{id}?cmd=changereviewstate&newstate=new&by_project=home:coolo:test&by_package=kdelibs_DEVEL_package"
     assert_response :success
@@ -2230,7 +2212,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     get '/source/home:fred:DeleteProject/_meta'
     assert_response :success
     get '/source/kde4/Testing/myfile'
-    assert_response 404
+    assert_response :not_found
     get '/source/kde4/_meta'
     assert_response :success
     assert_no_xml_tag(tag: 'person', attributes: { userid: 'Iggy', role: 'bugowner' })
@@ -2247,7 +2229,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # which is required because of the InitializeDevelPackage attribute on kde4
     login_fred
     post "/request/#{id}?cmd=changestate&newstate=accepted"
-    assert_response 403
+    assert_response :forbidden
     assert_match(/No permission to initialize the source package as a devel package/, @response.body)
 
     # We need to set permissions on the source because of the InitializeDevelPackage attribute on kde4 project
@@ -2265,9 +2247,9 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_xml_tag tag: 'link', attributes: { project: 'kde4', package: 'Testing' }
     get '/source/home:Iggy/ToBeDeletedTestPack'
-    assert_response 404
+    assert_response :not_found
     get '/source/home:fred:DeleteProject'
-    assert_response 404
+    assert_response :not_found
     get '/source/kde4/Testing/myfile'
     assert_response :success
     get '/source/kde4/_meta'
@@ -2320,28 +2302,28 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     # try to break permissions
     post "/request/#{id}?cmd=changestate&newstate=accepted"
-    assert_response 403
+    assert_response :forbidden
     assert_match(/Request is in review state./, @response.body)
     post "/request/#{id}?cmd=changereviewstate&newstate=accepted&by_user=adrian"
-    assert_response 403
+    assert_response :forbidden
     assert_match(/review state change is not permitted for/, @response.body)
     post "/request/#{id}?cmd=changereviewstate&newstate=accepted&by_group=test_group"
-    assert_response 403
+    assert_response :forbidden
     assert_match(/review state change for group test_group is not permitted for Iggy/, @response.body)
     post '/request/987654321?cmd=changereviewstate&newstate=accepted&by_group=test_group'
-    assert_response 404
+    assert_response :not_found
     assert_match(/Couldn't find BsRequest/, @response.body)
 
     # Only partly matching by_ arguments
     login_adrian
     post "/request/#{id}?cmd=changereviewstate&newstate=accepted&by_user=adrian&by_group=test_group_b"
-    assert_response 403
+    assert_response :forbidden
     assert_match(/review state change for group test_group_b is not permitted for adrian/, @response.body)
     post "/request/#{id}?cmd=changereviewstate&newstate=accepted&by_user=adrian&by_project=BaseDistro"
-    assert_response 403
+    assert_response :forbidden
     assert_match(/review state change for project BaseDistro is not permitted for adrian/, @response.body)
     post "/request/#{id}?cmd=changereviewstate&newstate=accepted&by_user=adrian&by_project=BaseDistro&by_package=pack2"
-    assert_response 403
+    assert_response :forbidden
     assert_match(%r{review state change for package BaseDistro/pack2 is not permitted for adrian}, @response.body)
 
     # approve reviews for real
@@ -2362,7 +2344,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # Accept will fail because adrian does not have permissions on the source
     # which is required because of the InitializeDevelPackage attribute on kde4
     post "/request/#{id}?cmd=changestate&newstate=accepted&force=1"
-    assert_response 403
+    assert_response :forbidden
     assert_match(/No permission to initialize the source package as a devel package/, @response.body)
 
     # Adding adrian as maintainoer of the source
@@ -2508,7 +2490,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
             <state who='tom' name='new'/>
           </request>"
     post '/request?cmd=create', params: req
-    assert_response 400
+    assert_response :bad_request
     assert_xml_tag(tag: 'status', attributes: { code: 'missing_action' })
     req = "<request>
             <action type='submit'>
@@ -2522,7 +2504,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
             <state who='tom' name='new'/>
           </request>"
     post '/request?cmd=create', params: req
-    assert_response 400
+    assert_response :bad_request
     assert_xml_tag(tag: 'status', attributes: { code: 'missing_action' })
 
     # create request to a different place works
@@ -2665,7 +2647,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
                 <updatelink>true</updatelink>
               </options>
             </action>
-            <description>SUBMIT</description>
+            <description>SUBMIT bso#123</description>
             <state who='Iggy' name='new'/>
           </request>"
     post '/request?cmd=create', params: req
@@ -2679,6 +2661,11 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     post "/request/#{id}?cmd=diff&view=xml"
     assert_response :success
     assert_xml_tag(parent: { tag: 'file', attributes: { state: 'changed' } }, tag: 'old', attributes: { name: '_link' })
+
+    # Validate also the issue parsing of the description
+    post "/request/#{id}?cmd=diff&view=xml&withdescriptionissues=1"
+    assert_response :success
+    assert_xml_tag(parent: { tag: 'issues' }, tag: 'issue', attributes: { tracker: 'bso', name: '123' })
 
     # accept the request
     login_king
@@ -2788,14 +2775,14 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     login_king
     # you can only accept request in state new
     post "/request/#{id2}?cmd=changestate&newstate=accepted&force=1"
-    assert_response 403
+    assert_response :forbidden
     assert_xml_tag(tag: 'status', attributes: { code: 'post_request_no_permission' })
 
     # you can only accept request in state new and with an existing target
     post "/request/#{id2}?cmd=changestate&newstate=new&force=1"
     assert_response :success
     post "/request/#{id2}?cmd=changestate&newstate=accepted&force=1"
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'not_existing_target' })
 
     # decline the request
@@ -2816,7 +2803,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # try to decline it again after revoke
     login_king
     post "/request/#{id2}?cmd=changestate&newstate=declined"
-    assert_response 403
+    assert_response :forbidden
     assert_match(/set state to declined from a final state is not allowed./, @response.body)
 
     # revoke the request
@@ -2846,11 +2833,11 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
             </action>
             <accept_at>2010-07-13 14:00:21.000000000 Z</accept_at>
             <description>SUBMIT</description>
-            <state/>
+            <state name='new' />
           </request>"
     post '/request?cmd=create', params: req
     # user has no write permission in target
-    assert_response 403
+    assert_response :forbidden
     assert_xml_tag(tag: 'status', attributes: { code: 'post_request_no_permission' })
 
     # works as user with write permission in target
@@ -2884,7 +2871,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
             <state who='tom' name='new'/>
           </request>"
     post '/request?cmd=create', params: req
-    assert_response 400
+    assert_response :bad_request
     assert_xml_tag(tag: 'status', attributes: { code: 'request_save_error' })
     assert_xml_tag(tag: 'summary', content: 'Auto accept time is in the past')
 
@@ -2903,13 +2890,13 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     # and now check that the package is gone indeed
     get '/source/home:Iggy/TestPack'
-    assert_response 404
+    assert_response :not_found
 
     # the other one got close because the target does not exist anymore
     get "/request/#{id2}"
     assert_response :success
     assert_xml_tag(tag: 'state', attributes: { name: 'declined', when: '2010-07-14T00:00:00', who: 'Iggy' })
-    assert_xml_tag(tag: 'comment', content: "The target package 'TestPack' has been removed")
+    assert_xml_tag(tag: 'comment', content: "The package 'home:Iggy/TestPack' has been removed")
 
     # good, now revive to fix the state of the union
     post '/source/home:Iggy/TestPack?cmd=undelete'
@@ -2926,7 +2913,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
               <target project='home:Iggy' package='TestPack' />
             </action>
             <description>delete</description>
-            <state/>
+            <state name='new' />
           </request>"
 
     # works as user with write permission in target
@@ -2990,7 +2977,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
               </options>
             </action>
             <description>SUBMIT</description>
-            <state/>
+            <state name='new' />
           </request>"
     post '/request?cmd=create', params: req
     assert_response :success
@@ -3005,7 +2992,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     post "/request/#{id}?cmd=changestate&newstate=declined"
     assert_response :success
     post "/request/#{id}?cmd=changestate&newstate=accepted"
-    assert_response 403
+    assert_response :forbidden
     assert_xml_tag(tag: 'status', attributes: { code: 'post_request_no_permission' })
     assert_xml_tag(tag: 'summary', content: 'Request is not in new state. You may reopen it by setting it to new.')
     # reopen and accept the request
@@ -3054,11 +3041,11 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # diffs are secret for others
     reset_auth
     post "/request/#{id}?cmd=diff"
-    assert_response 401
+    assert_response :unauthorized
     login_Iggy
     post "/request/#{id}?cmd=diff"
     # make sure to always either show a diff or an error - empty diff is not an option
-    assert_response 403
+    assert_response :forbidden
   end
 
   # create requests to hidden from external
@@ -3066,7 +3053,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     reset_auth
     req = load_backend_file(backend_file)
     post '/request?cmd=create', params: req
-    assert_response 401
+    assert_response :unauthorized
     assert_select 'status[code] > summary', /Authentication required/
     prepare_request_with_user(user, pass)
     post '/request?cmd=create', params: req
@@ -3083,7 +3070,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
   # request_controller.rb:178
   def test_create_request_to_hidden_package_from_open_place_invalid_user
     request_hidden('Iggy', 'buildservice', 'request/to_hidden_from_open_invalid')
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'unknown_project' })
   end
 
@@ -3100,7 +3087,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
   ## create request to hidden package from hidden place - invalid user - fail
   def test_create_request_to_hidden_package_from_hidden_place_invalid_user
     request_hidden('Iggy', 'buildservice', 'request/to_hidden_from_hidden_invalid')
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'unknown_project' })
   end
 
@@ -3121,7 +3108,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     login_Iggy
     post '/request?cmd=create', params: load_backend_file('request/hidden_add_role_fail')
     # should fail as this user shouldn't see the target package at all.
-    assert_response 404 if @ENABLE_BROKEN_TEST
+    assert_response :not_found if @ENABLE_BROKEN_TEST
     reset_auth
     login_adrian
     post '/request?cmd=create', params: load_backend_file('request/hidden_add_role')
@@ -3152,7 +3139,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     # accept this request without permissions
     post "/request/#{id}?cmd=changestate&newstate=accepted&force=1"
-    assert_response 403
+    assert_response :forbidden
 
     # everything still there
     get '/source/home:Iggy:Test/_meta'
@@ -3211,7 +3198,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # decline as fred
     login_fred
     post "/request/#{id}?cmd=changestate&newstate=declined"
-    assert_response 403
+    assert_response :forbidden
   end
 
   def test_invalid_names
@@ -3226,7 +3213,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
             <state who='Iggy' name='new'/>
           </request>"
     post '/request?cmd=create', params: req
-    assert_response 400
+    assert_response :bad_request
     assert_xml_tag(tag: 'status', attributes: { code: 'invalid_record' })
 
     req = "<request>
@@ -3238,7 +3225,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
             <state who='Iggy' name='new'/>
           </request>"
     post '/request?cmd=create', params: req
-    assert_response 400
+    assert_response :bad_request
     assert_xml_tag(tag: 'status', attributes: { code: 'invalid_record' })
   end
 
@@ -3310,7 +3297,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     meta = "<package name='realfun' project='home:Iggy:todo'><title/><description/></package>"
-    put url_for(controller: :source_project_package_meta, action: :update, project: 'home:Iggy:todo', package: 'realfun'), params: meta
+    put url_for(controller: :source_package_meta, action: :update, project: 'home:Iggy:todo', package: 'realfun'), params: meta
     assert_response :success
 
     login_tom
@@ -3348,7 +3335,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     # cleanup
     delete '/source/home:Iggy:todo'
-    assert_response 404 # already removed
+    assert_response :not_found # already removed
     login_tom
     delete '/source/home:tom:branches:home:Iggy:todo'
     assert_response :success
@@ -3362,7 +3349,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert_xml_tag(tag: 'package', attributes: { project: 'BaseDistro' }) # it appears via project link
 
     # and create a request to wrong target
-    ['delete', 'set_bugowner', 'add_role', 'change_devel'].each do |at|
+    %w[delete set_bugowner add_role change_devel].each do |at|
       rq = '<request>
              <action type="' + at + '">'
       rq += "  <source project='BaseDistro' package='pack1'/>" if at == 'change_devel'
@@ -3373,7 +3360,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
            </request>'
 
       post '/request?cmd=create', params: rq
-      assert_response 404
+      assert_response :not_found
       assert_xml_tag(tag: 'status', attributes: { code: 'not_found' })
     end
   end
@@ -3391,7 +3378,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     meta = "<package name='realfun' project='home:Iggy:todo'><title/><description/></package>"
-    put url_for(controller: :source_project_package_meta, action: :update, project: 'home:Iggy:todo', package: 'realfun'), params: meta
+    put url_for(controller: :source_package_meta, action: :update, project: 'home:Iggy:todo', package: 'realfun'), params: meta
     assert_response :success
 
     login_tom
@@ -3437,7 +3424,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # try again and fail
     login_Iggy
     post "/request/#{iddelete2}?cmd=changestate&newstate=accepted"
-    assert_response 404
+    assert_response :not_found
     assert_xml_tag(tag: 'status', attributes: { code: 'repository_missing' })
 
     # cleanup
@@ -3461,7 +3448,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
 
     # old admins can do that
     delete "/request/#{id}"
-    assert_response 403
+    assert_response :forbidden
     assert_xml_tag tag: 'summary', content: 'Requires admin privileges'
 
     login_king
@@ -3469,7 +3456,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     get "/request/#{id}"
-    assert_response 404
+    assert_response :not_found
   end
 
   def test_reopen_declined_request
@@ -3564,7 +3551,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     id = Xmlhash.parse(@response.body)['id']
 
-    assert_not BsRequest.find_by_number(id).is_target_maintainer?(User.session), 'tom is not target maintainer'
+    assert_not BsRequest.find_by_number(id).target_maintainer?(User.session), 'tom is not target maintainer'
   end
 
   def test_cleanup_from_home
@@ -3599,7 +3586,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     # Iggy can't accept due to devel package
     login_Iggy
     post "/request/#{id}?cmd=changestate&newstate=accepted"
-    assert_response 400
+    assert_response :bad_request
     assert_xml_tag tag: 'summary', content: 'Package is used by following packages as devel package: BaseDistro:Update/pack2'
 
     # but they should be able to add reviewers
@@ -3647,7 +3634,7 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     get "/source/#{bprj}"
     if expect_cleanup_empty_project
-      assert_response 404
+      assert_response :not_found
     else
       assert_response :success
       assert_no_xml_tag tag: 'entry', attributes: { name: 'apache2' }
@@ -3802,4 +3789,3 @@ class RequestControllerTest < ActionDispatch::IntegrationTest
     assert_equal 'important', node['request'][1]['priority']
   end
 end
-# rubocop:enable Layout/LineLength

@@ -1,6 +1,12 @@
 class EventSubscription
   class ForChannelForm
     DISABLE_FOR_EVENTS = ['Event::ServiceFail'].freeze
+    DISABLE_RSS_FOR_EVENTS = ['Event::ReportForProject', 'Event::ReportForPackage',
+                              'Event::ReportForComment', 'Event::ReportForUser',
+                              'Event::ReportForRequest',
+                              'Event::WorkflowRunFail', 'Event::AppealCreated',
+                              'Event::FavoredDecision', 'Event::ClearedDecision',
+                              'Event::AddedUserToGroup', 'Event::RemovedUserFromGroup'].freeze
 
     attr_reader :name, :subscription
 
@@ -18,7 +24,8 @@ class EventSubscription
     end
 
     def disabled_checkbox?
-      DISABLE_FOR_EVENTS.include?(@event.to_s) && (name == 'web' || name == 'rss')
+      (DISABLE_FOR_EVENTS.include?(@event.to_s) && %w[web rss].include?(name)) ||
+        (DISABLE_RSS_FOR_EVENTS.include?(@event.to_s) && name == 'rss')
     end
 
     private

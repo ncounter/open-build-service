@@ -55,8 +55,7 @@ class BsRequestActionDelete < BsRequestAction
     end
 
     if target_package
-      package = Package.get_by_project_and_name(target_project, target_package,
-                                                use_source: true, follow_project_links: false)
+      package = Package.get_by_project_and_name(target_project, target_package, follow_project_links: false)
       package.commit_opts = { comment: bs_request.description, request: bs_request }
       package.destroy
       Package.source_path(target_project, target_package)
@@ -78,6 +77,10 @@ class BsRequestActionDelete < BsRequestAction
     else
       "Delete #{target_project}"
     end
+  end
+
+  def short_name
+    name
   end
 
   private
@@ -115,6 +118,8 @@ end
 #  updatelink            :boolean          default(FALSE)
 #  created_at            :datetime
 #  bs_request_id         :integer          indexed, indexed => [target_package_id], indexed => [target_project_id]
+#  source_package_id     :integer          indexed
+#  source_project_id     :integer          indexed
 #  target_package_id     :integer          indexed => [bs_request_id], indexed
 #  target_project_id     :integer          indexed => [bs_request_id], indexed
 #
@@ -124,7 +129,9 @@ end
 #  index_bs_request_actions_on_bs_request_id_and_target_package_id  (bs_request_id,target_package_id)
 #  index_bs_request_actions_on_bs_request_id_and_target_project_id  (bs_request_id,target_project_id)
 #  index_bs_request_actions_on_source_package                       (source_package)
+#  index_bs_request_actions_on_source_package_id                    (source_package_id)
 #  index_bs_request_actions_on_source_project                       (source_project)
+#  index_bs_request_actions_on_source_project_id                    (source_project_id)
 #  index_bs_request_actions_on_target_package                       (target_package)
 #  index_bs_request_actions_on_target_package_id                    (target_package_id)
 #  index_bs_request_actions_on_target_project                       (target_project)

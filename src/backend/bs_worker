@@ -35,18 +35,17 @@ use Digest::SHA ();
 use XML::Structured ':bytes';
 use Data::Dumper;
 use POSIX;
+use Storable;
 use Fcntl qw(:DEFAULT :flock);
 BEGIN { Fcntl->import(':seek') unless defined &SEEK_SET; }
 
-use Storable;
-
+use BSConfiguration;
+use BSOBS;
 use BSRPC;
 use BSServer;
 use BSDispatch;
-use BSConfiguration;
 use BSUtil;
 use BSXML;
-use BSKiwiXML;
 use BSHTTP;
 use BSBuild;
 use BSCando;
@@ -63,7 +62,7 @@ eval { BSRPC::import(':https') };
 
 use strict;
 
-my @binsufs = qw{rpm deb pkg.tar.gz pkg.tar.xz pkg.tar.zst};
+my @binsufs = @BSOBS::binsufs;
 my $binsufsre = join('|', map {"\Q$_\E"} @binsufs);
 
 my $buildroot;
@@ -97,6 +96,7 @@ my $workerid;
 my $srcserver;
 my @reposervers;
 my $testmode;
+my $testcasemode;
 my $noworkercheck;
 my $nobuildcodecheck;
 my $oneshot;
@@ -394,7 +394,13 @@ my $exitrestart;
 my $exitrestart_timeout = 300;	# wait max 5 minuntes
 
 exit(0) if @ARGV == 1 && $ARGV[0] eq '--selftest';
-return 1 if @ARGV == 1 && $ARGV[0] eq '--testcase';
+if ($ARGV[0] eq '--testcase') {
+  @ARGV= ();
+  $testcasemode = 1;
+  $buildroot = '/testcasemode/buildroot';
+  $statedir = '/testcasemode/statedir';
+  $hostarch = 'x86_64';
+}
 
 while (@ARGV) {
   usage(0) if $ARGV[0] eq '--help';
@@ -742,8 +748,8 @@ if ($justbuild) {
   my $buildinfo = readxml($ARGV[0], $BSXML::buildinfo);
   if ($localkiwi) {
     # make sure this is the right job for us
-    die("not a kiwi job\n") unless $buildinfo->{'file'} =~ /\.kiwi$/;
-    die("not a kiwi product job\n") unless $buildinfo->{'imagetype'} && $buildinfo->{'imagetype'}->[0] eq 'product';
+    my $imagemode = getimagemode($buildinfo);
+    die("not a product job\n") unless $imagemode && ($imagemode eq 'kiwiproduct' || $imagemode eq 'productcompose');
   }
   $| = 1;
   dobuild($buildinfo);
@@ -1077,6 +1083,16 @@ sub importbuild {
     Build->import();
 }
 
+sub md5file {
+  my ($fn) = @_;
+  my $fd;
+  open($fd, '<', $fn) || die("$fn: $!\n");
+  my $ctx = Digest::MD5->new;
+  $ctx->addfile($fd);
+  close($fd);
+  return $ctx->hexdigest();
+}
+
 sub sha256file {
   my ($fn) = @_;
   my $fd;
@@ -1225,6 +1241,8 @@ sub getpubkey {
   my ($buildinfo, $dir, $signtype) = @_;
   my $server = $buildinfo->{'srcserver'} || $srcserver;
   my @args = ("project=$buildinfo->{'project'}", "withpubkey=1");
+  push @args, "signtype=$signtype" if $signtype;
+  push @args, "signflavor=$buildinfo->{'signflavor'}" if $buildinfo->{'signflavor'};
   my $signkey;
   my $pubkey;
   eval {
@@ -1245,6 +1263,7 @@ sub getsslcert {
   my $cert;
   my @args = ("project=$buildinfo->{'project'}", "autoextend=1");
   push @args, "signtype=$signtype" if $signtype;
+  push @args, "signflavor=$buildinfo->{'signflavor'}" if $buildinfo->{'signflavor'};
   eval {
     $cert = BSRPC::rpc({
       'uri' => "$server/getsslcert",
@@ -1596,12 +1615,14 @@ sub getbinaries_cache {
 	my $n = $1;
 	my @s = stat("$dir/$r->{'name'}");
 	die unless @s;
-        my $id = Build::queryhdrmd5("$dir/$r->{'name'}");
-	$r->{'hdrmd5'} = $id;
-	my ($cacheid) = get_cachefile("$projid/$repoid/$arch", $id);
-	push @cachenew, [$cacheid, $s[7], "$dir/$r->{'name'}"];
+	my $id = Build::queryhdrmd5("$dir/$r->{'name'}");
+	if ($id) {
+	  $r->{'hdrmd5'} = $id;
+	  my ($cacheid) = get_cachefile("$projid/$repoid/$arch", $id);
+	  push @cachenew, [$cacheid, $s[7], "$dir/$r->{'name'}"];
+	}
 	my $bv = $bv{substr($n, length($binprefix))};
-	if ($bv && $bv->{'evr'} && $bv->{'hdrmd5'} eq $id) {
+	if ($id && $bv && $bv->{'evr'} && $bv->{'hdrmd5'} eq $id) {
 	  $r->{'evr'} = $bv->{'evr'};
 	  $r->{'arch'} = $bv->{'arch'};
 	} else {
@@ -1660,11 +1681,12 @@ sub sendbadpackagebinaryversionlist {
 }
 
 # this specialized version of getbinaries only works for
-# kiwi product builds
+# product builds, either done via kiwi or product composer
 # TODO: add provenance materials
-sub getbinaries_kiwiproduct {
+sub getbinaries_product {
   my ($buildinfo, $dir, $srcdir, $kiwiorigins) = @_;
 
+  my $imagemode = getimagemode($buildinfo);
   mkdir_p($dir);
   # we need the Build package for queryhdrmd5
   importbuild() unless defined &Build::queryhdrmd5;
@@ -1681,7 +1703,7 @@ sub getbinaries_kiwiproduct {
     my $got = getbinaries_cache($dir, $server, $repo->{'project'}, $repo->{'repository'}, $repoarch, 1, \@kdeps, $modules);
     @kdeps = grep {!$got->{$_}} @kdeps;
   }
-  die("getbinaries_kiwiproduct: missing packages: @kdeps\n") if @kdeps;
+  die("404: getbinaries_product: missing packages: @kdeps\n") if @kdeps;
 
   # all done for followup builds
   return () if $buildinfo->{'followupfile'};
@@ -1744,6 +1766,8 @@ sub getbinaries_kiwiproduct {
 	return '_slsa_provenance';
       } elsif ($name =~ /appdata\.xml$/) {
 	return 'appdata'; 
+      } elsif ($name eq 'updateinfo.xml') {
+	return 'updateinfo';
       }
       return undef;
     };
@@ -2038,6 +2062,8 @@ sub getbinaries_kiwiproduct {
 
       # rename modulemd.yaml file
       if ($done{'modulemd/_modulemd.yaml'}) {
+	my $md5 = md5file("$ddir/modulemd/_modulemd.yaml");
+	$meta{"$prpap/_modulemd.yaml"} = "$md5  $prpap/_modulemd.yaml" if ($imagemode || '') eq 'productcompose';
 	rename("$ddir/modulemd/_modulemd.yaml", "$ddir/modulemd/$packid.$arch.modulemd.yaml") || die("rename $ddir/modulemd/_modulemd.yaml $ddir/modulemd/$packid.$arch.modulemd.yaml: $!\n");
 	$kiwiorigins->{"obs://$prp/modulemd/$packid.$arch.modulemd.yaml"} = $prpap;
 	delete $kiwiorigins->{"obs://$prp/modulemd/_modulemd.yaml"};
@@ -2045,6 +2071,20 @@ sub getbinaries_kiwiproduct {
 	if ($cn) {
 	  $cn->[2] = "$ddir/modulemd/$packid.$arch.modulemd.yaml";
 	  $cachenew{"$ddir/modulemd/$packid.$arch.modulemd.yaml"} = $cn;
+	}
+      }
+
+      # rename updateinfo.xml file
+      if ($done{'updateinfo/updateinfo.xml'}) {
+	my $md5 = md5file("$ddir/updateinfo/updateinfo.xml");
+	$meta{"$prpap/updateinfo.xml"} = "$md5  $prpap/updateinfo.xml" if ($imagemode || '') eq 'productcompose';
+	rename("$ddir/updateinfo/updateinfo.xml", "$ddir/updateinfo/$packid.$arch.updateinfo.xml") || die("rename $ddir/updateinfo/updateinfo.xml $ddir/updateinfo/$packid.$arch.updateinfo.xml: $!\n");
+	$kiwiorigins->{"obs://$prp/updateinfo/$packid.$arch.updateinfo.xml"} = $prpap;
+	delete $kiwiorigins->{"obs://$prp/updateinfo/updateinfo.xml"};
+	my $cn = delete $cachenew{"$ddir/updateinfo/updateinfo.xml"};
+	if ($cn) {
+	  $cn->[2] = "$ddir/updateinfo/$packid.$arch.updateinfo.xml";
+	  $cachenew{"$ddir/updateinfo/$packid.$arch.updateinfo.xml"} = $cn;
 	}
       }
 
@@ -2227,11 +2267,11 @@ sub getpreinstallimage {
   for my $repo (@{$buildinfo->{'path'} || []}) {
     my $server = $repo->{'server'} || $buildinfo->{'reposerver'};
     my $nometa = $repo->{'project'} ne $projid || $repo->{'repository'} ne $repoid ? 1 : 0;
-    $nometa = 1 if $buildinfo->{'file'} eq '_preinstallimage';
     $nometa = 1 if $buildinfo->{'forcebinaryidmeta'};
     $nometa = 1 if $buildinfo->{'crossarch'};	# preinstallimage is always native
     my $callers_time = time();
     my @args;
+    push @args, "workerid=$workerid" if defined $workerid;
     push @args, "project=$repo->{'project'}";
     push @args, "repository=$repo->{'repository'}";
     push @args, "arch=$arch";
@@ -2475,6 +2515,7 @@ sub getbinaries_buildenv {
       my $server = $repo->{'server'} || $buildinfo->{'reposerver'};
       my $callers_time = time();
       my @args;
+      push @args, "workerid=$workerid" if defined $workerid;
       push @args, "project=$repo->{'project'}";
       push @args, "repository=$repo->{'repository'}";
       push @args, "arch=$arch";
@@ -2503,7 +2544,7 @@ sub getbinaries_buildenv {
   }
   # ok, all info is collected
   my @missing = grep {!@{$needed{"$_->{'name'}.$_->{'hdrmd5'}"}}} @bdeps;
-  die("missing packages: ".join(', ', map {+"$_->{'name'}\@$_->{'hdrmd5'}"} @missing)."\n") if @missing;
+  die("404 missing packages: ".join(', ', map {+"$_->{'name'}\@$_->{'hdrmd5'}"} @missing)."\n") if @missing;
 
   my @cacheold;
   my @cachenew;
@@ -2523,14 +2564,13 @@ sub getbinaries_buildenv {
 	  my $id = Build::queryhdrmd5("$dir/$bv->{'name'}");
 	  if ($id eq $bv->{'hdrmd5'}) {
 	    push @cacheold, [$cacheid, $s[7]];
+	    die unless $bv->{'name'} =~ /(.*)\.rpm$/;
+	    $used{$needed} = { 'name' => $1, 'project' => $projid, 'repository' => $repoid, 'hdrmd5' => $id };
 	    delete $needed{$needed};
 	    last;
           }
-	  die unless $bv->{'name'} =~ /(.*)\.rpm$/;
-	  $used{$needed} = { 'name' => $1, 'project' => $projid, 'repository' => $repoid, 'hdrmd5' => $id };
-	} else {
-	  unlink("$dir/$bv->{'name'}");
 	}
+	unlink("$dir/$bv->{'name'}");
       }
     }
   }
@@ -2600,8 +2640,9 @@ sub getbinaries_buildenv {
   my $outbdep = ($buildinfo->{'outbuildinfo'} || {})->{'bdep'};
   if ($outbdep) {
     for (@bdeps) {
-      my $obdep = $used{"$_->{'name'}.$_->{'hdrmd5'}"};
-      die("did not use package $_?\n") unless $obdep;
+      my $needed = "$_->{'name'}.$_->{'hdrmd5'}";
+      my $obdep = $used{$needed};
+      die("did not use package $needed?\n") unless $obdep;
       push @$outbdep, $obdep;
     }
   }
@@ -2610,16 +2651,17 @@ sub getbinaries_buildenv {
   return ();	# no meta
 }
 
-sub getkiwimode {
+sub getimagemode {
   my ($buildinfo) = @_;
   my $file = $buildinfo->{'file'};
   $file =~ s/^_service:.*://;
-  my $kiwimode;
-  $kiwimode = 'image' if $file =~ /\.kiwi$/;
-  $kiwimode = 'product' if $kiwimode && $buildinfo->{'imagetype'} && $buildinfo->{'imagetype'}->[0] eq 'product';
-  $kiwimode = 'docker' if $file eq 'Dockerfile';
-  $kiwimode = 'fissile' if $file eq 'fissile.yml';
-  return $kiwimode;
+  my $imagemode;
+  $imagemode = 'kiwiimage' if $file =~ /\.kiwi$/;
+  $imagemode = 'kiwiproduct' if $imagemode && $buildinfo->{'imagetype'} && $buildinfo->{'imagetype'}->[0] eq 'product';
+  $imagemode = 'docker' if $file =~ /^Dockerfile(?:\.|$)/;
+  $imagemode = 'fissile' if $file eq 'fissile.yml';
+  $imagemode = 'productcompose' if $file =~ /\.productcompose$/;
+  return $imagemode;
 }
 
 sub getbinaries_containers {
@@ -2654,11 +2696,11 @@ sub getbinaries_containers {
     }, undef, @args, "binaries=$bdep->{'name'}");
     die("Error\n") unless ref($res);
     $res = [ grep {$_->{'name'} ne '.errors'} @$res ];
-    die("getbinaries: missing packages: $bdep->{'name'}\n") unless @$res == 1;
+    die("404 getbinaries: missing packages: $bdep->{'name'}\n") unless @$res == 1;
     my $tarname = $res->[0]->{'name'};
     add_slsa_materials_binary($buildinfo, "$repo->{'project'}/$repo->{'repository'}/$buildinfo->{'arch'}", $tarname, "$ddir/$tarname", 'containers') if $buildinfo->{'slsaprovenance'};
-    my $kiwimode = getkiwimode($buildinfo);
-    if ($kiwimode eq 'image' && $tarname =~ /\.tar$/) {
+    my $imagemode = getimagemode($buildinfo);
+    if ($imagemode eq 'kiwiimage' && $tarname =~ /\.tar$/) {
       system('gzip', '-f', '-1', "$ddir/$tarname") && die("kiwi container compression: $?\n");
       $tarname .= '.gz';
       die("kiwi container compression did not work\n") unless -f "$ddir/$tarname";
@@ -2692,7 +2734,8 @@ sub getbinaries_containers {
 }
 
 # TODO: add provenance materials
-sub getbinaries_kiwiimage {
+# Use for kiwi appliances, docker or fissile builds
+sub getbinaries_image {
   my ($buildinfo, $dir, $srcdir, $origins) = @_;
 
   mkdir_p($dir);
@@ -2721,12 +2764,12 @@ sub getbinaries_kiwiimage {
       if ($buildinfo->{'slsaprovenance'}) {
 	for my $n (sort keys %$got) {
 	  my $f = $got->{$n};
-	  add_slsa_materials_binary($buildinfo, "$repo->{'project'}/$repo->{'repository'}/$syspatharch", $f->{'name'}, "$dir/$f->{'name'}");
+	  add_slsa_materials_binary($buildinfo, "$repo->{'project'}/$repo->{'repository'}/$syspatharch", $f->{'name'}, "$dir/$f->{'name'}") if $buildinfo->{'slsaprovenance'};
 	}
       }
       @todo = grep {!$got->{$_}} @todo;
     }
-    die("getbinaries: missing packages: @todo\n") if @todo;
+    die("404 getbinaries: missing packages: @todo\n") if @todo;
     @todo = grep {$bdep_noinstall{$_} || !$bdep_notmeta{$_}} @bdep;
   }
 
@@ -2775,7 +2818,7 @@ sub getbinaries_kiwiimage {
     }
     @todo = grep {!$got->{$_}} @todo;
   }
-  die("getbinaries: missing packages: @todo\n") if @todo;
+  die("404 getbinaries: missing packages: @todo\n") if @todo;
 
   # fetch the base containers
   push @meta, getbinaries_containers($buildinfo, $dir, $srcdir, $origins);
@@ -2790,8 +2833,8 @@ sub getbinaries {
 
   return getbinaries_buildenv($buildinfo, $dir, $srcdir) if $buildinfo->{'hasbuildenv'};
 
-  my $kiwimode = getkiwimode($buildinfo);
-  return getbinaries_kiwiimage($buildinfo, $dir, $srcdir, $origins) if $kiwimode;
+  my $imagemode = getimagemode($buildinfo);
+  return getbinaries_image($buildinfo, $dir, $srcdir, $origins) if $imagemode;
 
   mkdir_p($dir);
 
@@ -2835,8 +2878,8 @@ sub getbinaries {
 	  my $obdep = { 'name' => $_, 'hdrmd5' => $bv->{'hdrmd5'}, 'project' => $imageorigins->{$_}->[0], 'repository' => $imageorigins->{$_}->[1] };
 	  if ($bv->{'evr'}) {
 	    $obdep->{'version'} = $bv->{'evr'};
-	    $obdep->{'epoch'} = $1 if $bv->{'version'} =~ s/^([0-9]+)://;
-	    $obdep->{'release'} = $1 if $bv->{'version'} =~ s/-([^\-]+)$//;
+	    $obdep->{'epoch'} = $1 if $obdep->{'version'} =~ s/^([0-9]+)://;
+	    $obdep->{'release'} = $1 if $obdep->{'version'} =~ s/-([^\-]+)$//;
 	    $obdep->{'arch'} = $bv->{'arch'} if $bv->{'arch'};
 	  }
 	  push @$outbdep, $obdep;
@@ -2854,7 +2897,6 @@ sub getbinaries {
     last unless @todo;
     my $repoprp = "$repo->{'project'}/$repo->{'repository'}";
     my $nometa = $repo->{'project'} ne $projid || $repo->{'repository'} ne $repoid ? 1 : 0;
-    $nometa = 1 if $buildinfo->{'file'} eq '_preinstallimage';
     $nometa = 1 if $buildinfo->{'forcebinaryidmeta'};
     my $server = $repo->{'server'} || $buildinfo->{'reposerver'};
     my $arch = $buildinfo->{'arch'};
@@ -2883,11 +2925,17 @@ sub getbinaries {
 	# sigh, no package information available yet...
 	$origins->{$_} = "$repoprp/$arch";
       }
-      add_slsa_materials_binary($buildinfo, "$repo->{'project'}/$repo->{'repository'}/$arch", $gotpkg->{'name'}, "$dir/$gotpkg->{'name'}") if $buildinfo->{'slsaprovenance'};
+      if ($buildinfo->{'slsaprovenance'}) {
+        if ($cross) {
+          add_slsa_materials_binary($buildinfo, "$repo->{'project'}/$repo->{'repository'}/$arch", substr($gotpkg->{'name'}, length($binaryprefix)), "$dir/$gotpkg->{'name'}", 'sysroot');
+        } else {
+          add_slsa_materials_binary($buildinfo, "$repo->{'project'}/$repo->{'repository'}/$arch", $gotpkg->{'name'}, "$dir/$gotpkg->{'name'}");
+        }
+      }
     }
     @todo = grep {!$done{"$binaryprefix$_"}} @todo;
   }
-  die("getbinaries: missing packages: @todo\n") if @todo;
+  die("404 getbinaries: missing packages: @todo\n") if @todo;
 
   # now get the native packages in cross mode
   @todo = map {$_->{'name'}} grep {!$_->{'sysroot'}} @bdep if $cross;
@@ -2920,7 +2968,7 @@ sub getbinaries {
     }
     @todo = grep {!$done{$_}} @todo;
   }
-  die("getbinaries: missing native packages: @todo\n") if @todo;
+  die("404 getbinaries: missing native packages: @todo\n") if @todo;
 
   # everything is downloaded, now generate meta data
   my @meta;
@@ -3091,98 +3139,113 @@ sub readbuildenv {
   }
 }
 
-sub has_obsrepositories {
-  my ($repos) = @_;
-  for my $repo (@{$repos || []}) {
-     return 1 if ($repo->{'source'} || {})->{'path'} eq 'obsrepositories:/';
-  }
-  return 0;
-}
-
-sub patchproductkiwi {
+sub kiwiproduct_patch_recipe  {
   my ($buildinfo, $kiwifile, $meta) = @_;
 
-  my $kiwi = readxml($kiwifile, $BSKiwiXML::kiwidesc);
-  die("no instsource section in kiwi file\n") unless $kiwi->{'instsource'};
-  my $repo_only;
-  my @vars;
-  my $tag_media;
-  for my $productvar (@{$kiwi->{'instsource'}->{'productoptions'}->{'productvar'} || []}) {
-    push @vars, $productvar;
-    $repo_only = 1 if $productvar->{'name'} eq 'REPO_ONLY' and $productvar->{'_content'} eq 'true';
+  require Build::SimpleXML;
+  my $kiwi_xml = readstr($kiwifile);
+  my $kiwi = Build::SimpleXML::parse($kiwi_xml, 'record' => 1);
+  my @patchlist;
+  die("no image elsement in kiwi file\n") unless $kiwi->{'image'};
+  my $image = $kiwi->{'image'}->[0];
+  die("no instsource section in kiwi file\n") unless $image->{'instsource'};
+  my $instsource = $image->{'instsource'}->[0];
+
+  # patch "MEDIUM_NAME" product variable
+  my $productoptions = $instsource->{'productoptions'} ? $instsource->{'productoptions'}->[0] : {};
+  for my $productvar (@{$productoptions->{'productvar'} || []}) {
     if ($productvar->{'name'} eq 'MEDIUM_NAME') {
       my $mediumbase = $productvar->{'_content'};
       my $cicnt = $buildinfo->{'versrel'};
       $cicnt =~ s/.*-//;
       if ($cicnt eq '1') {
-        # simple case for standard productconverter case
-        $mediumbase .= sprintf("-Build%04d", $buildinfo->{'bcnt'} || 0);
+	# simple case for standard productconverter case
+	$mediumbase .= sprintf("-Build%04d", $buildinfo->{'bcnt'} || 0);
       } else {
-        # standard CI_CNT-BCNT writing
-        $mediumbase .= sprintf("-Build%s.%d", $cicnt, $buildinfo->{'bcnt'} || 0);
-      }
-      pop @vars;
-      push @vars, { 'name' => 'BUILD_ID', '_content' => $mediumbase };
-      push @vars, { 'name' => 'MEDIUM_NAME', '_content' => "$mediumbase-Media" };
-    } elsif ($productvar->{'name'} eq 'RUN_MEDIA_CHECK' && $productvar->{'_content'} eq 'true') {
-      $tag_media = 1;
+	# standard CI_CNT-BCNT writing
+	$mediumbase .= sprintf("-Build%s.%d", $cicnt, $buildinfo->{'bcnt'} || 0);
+      }    
+      my $newxml = Build::SimpleXML::unparse({ 'productvar' => [ { 'name' => 'BUILD_ID', '_content' => $mediumbase }, { 'name' => 'MEDIUM_NAME', '_content' => "$mediumbase-Media" } ] }, 'indent' => '      ');
+      $newxml =~ s/^\s+//;
+      $newxml =~ s/\n$//s;
+      push @patchlist, [ $productvar->{'_start'}, $productvar->{'_end'}, $newxml ];
     }
   }
-  $kiwi->{'instsource'}->{'productoptions'}->{'productvar'} = \@vars;
 
-  # expand obsrepositories:/ directive
-  if (has_obsrepositories($kiwi->{'instsource'}->{'instrepo'})) {
-    # fill in pathes from buildinfo instead
+  # expand obsrepositories:/ in the instrepo path
+  for my $repo (@{$instsource->{'instrepo'} || []}) {
+    next unless $repo->{'source'} && $repo->{'source'}->[0]->{'path'} eq 'obsrepositories:/';
     my @rp;
     my $prio = 0;
     for my $path (@{$buildinfo->{'path'} || []}) {
       $prio = $prio + 1;
-      my $h = { 'source' => { 'path' => "obs://$path->{'project'}/$path->{'repository'}" } };
+      my $h = { 'source' => [ { 'path' => "obs://$path->{'project'}/$path->{'repository'}" } ] };
       $h->{'priority'} = $prio;
       $h->{'name'} = "obsrepositories_$prio";
       push @rp, $h;
     }
-    $kiwi->{'instsource'}->{'instrepo'} = \@rp;
+    my $newxml = Build::SimpleXML::unparse({ 'instrepo' => \@rp }, 'indent' => '    ');
+    $newxml =~ s/^\s+//;
+    $newxml =~ s/\n$//s;
+    push @patchlist, [ $repo->{'_start'}, $repo->{'_end'}, $newxml ];
   }
 
   # expand a "take all packages" for products
-  for my $repopackages (@{$kiwi->{'instsource'}->{'repopackages'} || []}) {
-    next unless grep {$_->{'name'} eq '*'} @{$repopackages->{'repopackage'} || []};
-    # hey, a substitute all modifier!
-    my @rp;
-    my %allpkgs;
-    for my $m (@$meta) {
-      # md5  proj/rep/arch/pack/bin.arch
-      my @s = split('/', $m);
-      next unless $s[-1] =~ /^(.*)\.([^\.]*)$/;
-      next if $2 eq 'src' || $2 eq 'nosrc';
-      $allpkgs{$1} ||= {};
-      $allpkgs{$1}->{$2} = 1;
-    }
-    for my $rp (@{$repopackages->{'repopackage'} || []}) {
-      if ($rp->{'name'} ne '*') {
-        push @rp, $rp;
-        next;
+  for my $repopackages (@{$instsource->{'repopackages'} || []}) {
+    for my $repopackage (@{$repopackages->{'repopackage'} || []}) {
+      next unless $repopackage && $repopackage->{'name'} eq '*';
+      my @rqarch;
+      if ($instsource->{'architectures'}) {
+	for (@{$instsource->{'architectures'}->[0]->{'requiredarch'} || []}) {
+	  push @rqarch, $_->{'ref'} if $_->{'ref'};
+	}
       }
+      my %allpkgs;
+      for my $m (@$meta) {
+	# md5  proj/rep/arch/pack/bin.arch
+	my @s = split('/', $m);
+	next unless $s[-1] =~ /^(.*)\.([^\.]*)$/;
+	$allpkgs{$1}->{$2} = 1 unless $2 eq 'src' || $2 eq 'nosrc';
+      }
+      my @rp;
       for my $pkg (sort keys %allpkgs) {
-        # exclude blind take of all debug packages. They will be taken
-        # automatically if a configured debug medium exists.
-        next if $pkg =~ /-debug(?:info|source)(?:-32bit|-64bit|-x86)?$/;
-        my @a;
-        for my $availableArch (sort keys %{$allpkgs{$pkg}}){
-          if ($availableArch eq 'noarch') {
-            push @a, sort(map { $_->{'ref'} } @{$kiwi->{'instsource'}->{'architectures'}->{'requiredarch'}});
-          } else {
-            push @a, $availableArch;
-          }
-        }
-        my %a = map {$_ => 1} @a;
-        push @rp, {'name' => $pkg, 'arch' => join(',', sort keys %a)};
+	# exclude blind take of all debug packages. They will be taken
+	# automatically if a configured debug medium exists.
+	next if $pkg =~ /-debug(?:info|source)(?:-32bit|-64bit|-x86)?$/;
+	my @a = map { $_ eq 'noarch' ? @rqarch : ($_) } sort keys %{$allpkgs{$pkg}};
+	push @rp, { 'name' => $pkg, 'arch' => join(',', sort(BSUtil::unify(@a))), '_order' => [ 'name', 'arch' ] };
       }
+      my $newxml = Build::SimpleXML::unparse({ 'repopackage' => \@rp }, 'indent' => '      ');
+      $newxml =~ s/^\s+//;
+      $newxml =~ s/\n$//s;
+      push @patchlist, [ $repopackage->{'_start'}, $repopackage->{'_end'}, $newxml ];
     }
-    $repopackages->{'repopackage'} = \@rp;
   }
-  writexml($kiwifile, undef, $kiwi, $BSKiwiXML::kiwidesc);
+
+  my $patchoff = 0;
+  for my $patch (sort {$a->[0] <=> $b->[0]} @patchlist) {
+    substr($kiwi_xml, $patch->[0] + $patchoff, $patch->[1] - $patch->[0], $patch->[2]);
+    $patchoff += length($patch->[2]) - ($patch->[1] - $patch->[0]);
+  }
+
+  writestr($kiwifile, undef, $kiwi_xml);
+}
+
+sub kiwiproduct_is_rpmhdrsonly {
+  my ($kiwifile) = @_;
+
+  require Build::SimpleXML;
+  my $kiwi_xml = readstr($kiwifile);
+  my $kiwi = Build::SimpleXML::parse($kiwi_xml);
+  die("no image elsement in kiwi file\n") unless $kiwi->{'image'};
+  my $image = $kiwi->{'image'}->[0];
+  die("no instsource section in kiwi file\n") unless $image->{'instsource'};
+  my $instsource = $image->{'instsource'}->[0];
+  my $productoptions = $instsource->{'productoptions'} ? $instsource->{'productoptions'}->[0] : {};
+  for my $productvar (@{$productoptions->{'productvar'} || []}) {
+    return 1 if $productvar->{'name'} eq 'RPMHDRS_ONLY' and $productvar->{'_content'} eq 'true';
+  }
+  return 0;
 }
 
 sub xmlescape {
@@ -3329,6 +3392,41 @@ sub createchannel {
   writestr("$dir/._channel", "$dir/_channel", $c);
 }
 
+# add origin information to the report
+sub annotatereport {
+  my ($buildinfo, $dir, $kiwiorigins) = @_;
+  my @reports = grep {/\.report$/} ls($dir);
+  for my $reportfile (@reports) {
+    my $report = readxml("$dir/$reportfile", $BSXML::report, 1);
+    next unless $report;
+    addreportdata($report, $buildinfo);
+    for my $bin (@{$report->{'binary'} || []}) {
+      # update entries
+      my $prpap = $kiwiorigins->{$bin->{'_content'}};
+      $prpap ||= 'UNKNOWN/UNKNOWN/UNKNOWN/UNKNOWN';
+      my ($projid, $repoid, $arch, $packid) = split('/', $prpap, 4);
+      $bin->{'project'} = $projid;
+      $bin->{'repository'} = $repoid;
+      $bin->{'arch'} = $arch;
+      $bin->{'package'} = $packid;
+    }
+    writexml("$dir/.$reportfile", "$dir/$reportfile", $report, $BSXML::report);
+  }
+}
+
+sub addcontainerinfodata {
+  my ($report, $containerinfofile) = @_;
+  return unless -s $containerinfofile && (-s _) < 1000000;
+  my $cf;
+  if (open($cf, '<', $containerinfofile)) {
+    while (<$cf>) {
+      $report->{'version'} = $1 if /^\s*\"version\"\s*:\s*\"(.*)\"/;
+      $report->{'release'} = $1 if /^\s*\"release\"\s*:\s*\"(.*)\"/;
+    }
+    close $cf;
+  }
+}
+
 # create a .report file from a .packages file by adding binary origin information
 sub createreport {
   my ($buildinfo, $dir, $kiwiorigins, $srcdir) = @_;
@@ -3428,6 +3526,10 @@ sub createreport {
     push @bins, @{$kiwiorigins->{':basecontainers'} || []};
     my $report = { 'binary' => \@bins };
     addreportdata($report, $buildinfo);
+    my $containerinfofile = $file;
+    $containerinfofile =~ s/\.packages$/\.containerinfo/;
+    $containerinfofile =~ s/\.containerinfo$/\.docker\.containerinfo/ unless -e "$dir/$containerinfofile";
+    addcontainerinfodata($report, "$dir/$containerinfofile") if -s "$dir/$containerinfofile";
     my $reportfile = $file;
     $reportfile =~ s/\.packages$/\.report/;
     writexml("$dir/.$reportfile", "$dir/$reportfile", $report, $BSXML::report);
@@ -3436,15 +3538,11 @@ sub createreport {
 
 sub normalize_container {
   my ($container, $recompress, $tmpdir) = @_;
-  local *TAR;
-  open(TAR, '<', $container) || die("$container: $!\n");
-  my ($tar, $mtime, undef, undef, $layercomp) = BSContar::normalize_container(\*TAR, $recompress, undef, $tmpdir);
+  my ($tar, $mtime, undef, undef, $layercomp) = BSContar::normalize_container($container, $recompress, undef, $tmpdir);
   if (grep {$_ && $_ ne 'gzip'} @{$layercomp || []}) {
-    close(TAR);
     die("non-gzip layer compression, not normalizing container\n");
   }
   BSTar::writetarfile("$container.new", undef, $tar, 'mtime' => $mtime);
-  close(TAR);
   if (-f "$container.sha256") {
     open(NEWTAR, '<', "$container.new") || die("$container.new: $!\n");
     my $ctx = Digest::SHA->new(256);
@@ -3458,13 +3556,31 @@ sub normalize_container {
   rename("$container.new", "$container") || die("rename $container.new $container: $!\n");
 }
 
+# this works for both v02 and v1 predicates
 my $slsa_json_template = {
   '_order' => [ '_type', 'subject', 'predicateType', 'predicate' ],
   'subject' => {
     '_order' => [ 'name', 'digest' ],
   },
   'predicate' => {
-    '_order' => [ 'builder', 'buildType', 'invocation', 'buildConfig', 'metadata', 'materials' ],
+    '_order' => [ 'buildDefinition', 'runDetails', 'builder', 'buildType', 'invocation', 'buildConfig', 'metadata', 'materials' ],
+    # v1
+    'buildDefinition' => {
+      '_order' => [ 'buildType', 'externalParameters', 'internalParameters', 'resolvedDependencies' ],
+      'resolvedDependencies' => {
+	'_order' => [ 'name', 'uri', 'digest', 'content', 'downloadLocation', 'mediaType', 'annotations' ],
+      }
+    },
+    'runDetails' => {
+      '_order' => [ 'builder', 'metadata', 'byproducts' ],
+      'builder' => {
+	'_order' => [ 'id', 'builderDependencies', 'version' ],
+      },
+      'metadata' => {
+	'_order' => [ 'invocationId', 'startedOn', 'finishedOn' ],
+      },
+    },
+    # v02
     'invocation' => {
       '_order' => [ 'configSource', 'parameters', 'environment' ],
       'configSource' => {
@@ -3491,28 +3607,62 @@ sub provenance_tojson {
   return Build::SimpleJSON::unparse($provenance,  'template' => $slsa_json_template, 'keepspecial' => 1);
 }
 
-sub generate_slsa_provenance_statement {
-  my ($buildinfo, $send) = @_;
-
-  # Generate subject, from the output artifacts
+# Generate subject from the output artifacts
+sub generate_slsa_provenance_subject {
+  my ($send) = @_;
   my $subject = [];
   for my $artifact (@$send) {
     next if $artifact->{name} =~ /^(rpmlint\.log|_statistics|_buildenv)$/;
-
     my $sha256sum = sha256file($artifact->{'filename'});
     push @$subject, { 'name' => $artifact->{'name'}, 'digest' => { 'sha256' => $sha256sum }};
   }
-  
-  my $configsourceuri;
+  return $subject;
+}
+
+sub generate_slsa_sourceuri {
+  my ($buildinfo, $filename, $sha256sum) = @_;
+
+  my $filename_suf = defined($filename) ? "/$filename" : '';
+  my $uri;
+  my $packid = $buildinfo->{'package'};
+  $packid =~ s/:.*// if $packid =~ /(?<!^_product)(?<!^_patchinfo):./;
   if ($buildinfo->{'slsadownloadurl'} && $buildinfo->{'slsadownloadurl'} =~ /(.*)\/_slsa$/) {
     # using the source publishing server
     my $server = $1;
-    $configsourceuri = BSHTTP::urlencode("$server/$buildinfo->{'project'}/$buildinfo->{'package'}/$buildinfo->{'srcmd5'}");
+    $uri = BSHTTP::urlencode("$server/$buildinfo->{'project'}/$packid/$buildinfo->{'srcmd5'}$filename_suf");
   } else {
     my $server = $buildinfo->{'slsadownloadurl'} || $buildinfo->{'srcserver'} || $srcserver;
-    $configsourceuri = BSHTTP::urlencode("$server/source/$buildinfo->{'project'}/$buildinfo->{'package'}")."?rev=$buildinfo->{'srcmd5'}";
+    $uri = BSHTTP::urlencode("$server/source/$buildinfo->{'project'}/$packid$filename_suf")."?rev=$buildinfo->{'srcmd5'}";
   }
+  return $uri;
+}
 
+sub generate_slsa_binaryuri {
+  my ($buildinfo, $prpa, $filename, $sha256sum) = @_;
+  my $uri;
+  if ($buildinfo->{'slsadownloadurl'} && $buildinfo->{'slsadownloadurl'} =~ /\/_slsa$/) {
+    # using the source publishing server
+    my $server = $buildinfo->{'slsadownloadurl'};
+    $uri = BSHTTP::urlencode("$server/$prpa/$filename/$sha256sum");
+  } else {
+    # using the api server
+    my $server = $buildinfo->{'slsadownloadurl'} || $buildinfo->{'srcserver'} || $srcserver;
+    $uri = BSHTTP::urlencode("$server/slsa/$prpa/$filename/$sha256sum");
+  }
+  return $uri;
+}
+
+sub generate_slsa_provenance_statement_v02 {
+  my ($buildinfo, $send) = @_;
+
+  my $subject = generate_slsa_provenance_subject($send);
+  my $sourceuri = generate_slsa_sourceuri($buildinfo);
+  # strip name and intent if not containers/repos
+  my @materials = map { { %$_ } } @{$buildinfo->{'materials'} || []};
+  for (@materials) {
+    delete $_->{'name'};
+    delete $_->{'intent'} if $_->{'intent'} && $_->{'intent'} ne 'containers' && $_->{'intent'} ne 'repos' && $_->{'intent'} ne 'sysroot';
+  }
   my $stmt = {
     '_type' => "https://in-toto.io/Statement/v0.1",
     'subject' => $subject,
@@ -3524,7 +3674,7 @@ sub generate_slsa_provenance_statement {
       'buildType' => 'https://open-build-service.org/worker',
       'invocation' => {
         'configSource' => {
-          'uri' => $configsourceuri,
+          'uri' => $sourceuri,
           'entryPoint' => $buildinfo->{'file'},
         },
       },
@@ -3536,63 +3686,86 @@ sub generate_slsa_provenance_statement {
         },
         'reproducible' => 0,
       },
-      'materials' => $buildinfo->{'materials'} || [],
-    },
+      'materials' => \@materials,
+    }
   };
   $stmt->{'predicate'}->{'invocation'}->{'parameters'}->{'release'} = $buildinfo->{'release'} if defined $buildinfo->{'release'};
   $stmt->{'predicate'}->{'invocation'}->{'parameters'}->{'buildflavor'} = $buildinfo->{'buildflavor'} if defined $buildinfo->{'buildflavor'};
   return provenance_tojson($stmt);
 }
 
+sub generate_slsa_provenance_statement_v1 {
+  my ($buildinfo, $send) = @_;
+
+  # generate flags for buildenv binaries
+  my $imagemode = getimagemode($buildinfo);
+  my @bdep = @{$buildinfo->{'bdep'} || []};
+  my %flags;
+  $flags{$_->{'name'}}->{'preinstall'} = 1 for grep {$_->{'preinstall'}} @bdep;
+  $flags{$_->{'name'}}->{'vminstall'} = 1 for grep {$_->{'vminstall'}} @bdep;
+  $flags{$_->{'name'}}->{'runscripts'} = 1 for grep {$_->{'runscripts'}} @bdep;
+  if (!$imagemode) {
+    $flags{$_->{'name'}}->{'noinstall'} = 1 for grep {$_->{'noinstall'}} @bdep;
+    $flags{$_->{'name'}}->{'installonly'} = 1 for grep {$_->{'installonly'}} @bdep;
+  }
+
+  my $subject = generate_slsa_provenance_subject($send);
+  my $sourceuri = generate_slsa_sourceuri($buildinfo);
+  # make intent an annotation
+  my @materials = map { { %$_ } } @{$buildinfo->{'materials'} || []};
+  for (@materials) {
+    my $i = delete $_->{'intent'};
+    $_->{'annotations'}->{'intent'} = $i if $i;
+    if ($i && $i eq 'buildenv') {
+      my $binname;
+      $binname = $1 if $_->{'name'} =~ /(.*)\.(?:$binsufsre)$/;
+      $_->{'annotations'}->{'flags'} = join(',', sort keys %{$flags{$binname}}) if $binname && $flags{$binname};
+    }
+  }
+  my $stmt = {
+    '_type' => "https://in-toto.io/Statement/v0.1",
+    'subject' => $subject,
+    'predicateType' => 'https://slsa.dev/provenance/v1',
+    'predicate' => {
+      'buildDefinition' => {
+	'buildType' => 'https://open-build-service.org/worker',
+	'externalParameters' => {
+	  'source' => $sourceuri,
+	  'recipeFile' => $buildinfo->{'file'},
+	},
+	'resolvedDependencies' => \@materials,
+      },
+      'runDetails' => {
+	'id' => $buildinfo->{'slsabuilder'},
+      },
+    }
+  };
+  my $external_params = $stmt->{'predicate'}->{'buildDefinition'}->{'externalParameters'};
+  $external_params->{'release'} = $buildinfo->{'release'} if defined $buildinfo->{'release'};
+  $external_params->{'buildflavor'} = $buildinfo->{'buildflavor'} if defined $buildinfo->{'buildflavor'};
+  return provenance_tojson($stmt);
+}
+
 sub add_slsa_materials_sourcefile {
   my ($buildinfo, $filename, $localfile) = @_;
   my $sha256sum = sha256file($localfile);
-  my $uri;
-  if ($buildinfo->{'slsadownloadurl'} && $buildinfo->{'slsadownloadurl'} =~ /(.*)\/_slsa$/) {
-    # using the source publishing server
-    my $server = $1;
-    $uri = BSHTTP::urlencode("$server/$buildinfo->{'project'}/$buildinfo->{'package'}/$buildinfo->{'srcmd5'}/$filename");
-  } else {
-    # using the api server
-    my $server = $buildinfo->{'slsadownloadurl'} || $buildinfo->{'srcserver'} || $srcserver;
-    $uri = BSHTTP::urlencode("$server/source/$buildinfo->{'project'}/$buildinfo->{'package'}/$filename")."?rev=$buildinfo->{'srcmd5'}";
-  }
-  push @{$buildinfo->{'materials'}}, { 'uri' => $uri, 'digest' => { 'sha256' => $sha256sum } };
+  my $uri = generate_slsa_sourceuri($buildinfo, $filename, $sha256sum);
+  push @{$buildinfo->{'materials'}}, { 'name' => $filename, 'uri' => $uri, 'digest' => { 'sha256' => $sha256sum }, 'intent' => 'source' };
 }
 
 sub add_slsa_materials_binary {
   my ($buildinfo, $prpa, $filename, $localfile, $intent) = @_;
   my $sha256sum = sha256file($localfile);
-  my $uri;
-  if ($buildinfo->{'slsadownloadurl'} && $buildinfo->{'slsadownloadurl'} =~ /\/_slsa$/) {
-    # using the source publishing server
-    my $server = $buildinfo->{'slsadownloadurl'};
-    $uri = BSHTTP::urlencode("$server/$prpa/$filename/$sha256sum");
-  } else {
-    # using the api server
-    my $server = $buildinfo->{'slsadownloadurl'} || $buildinfo->{'srcserver'} || $srcserver;
-    $uri = BSHTTP::urlencode("$server/slsa/$prpa/$filename/$sha256sum");
-  }
-  my $m = { 'uri' => $uri, 'digest' => { 'sha256' => $sha256sum } };
-  $m->{'intent'} = $intent if $intent;
-  push @{$buildinfo->{'materials'}}, $m;
+  my $uri = generate_slsa_binaryuri($buildinfo, $prpa, $filename, $sha256sum);
+  push @{$buildinfo->{'materials'}}, { 'name' => $filename, 'uri' => $uri, 'digest' => { 'sha256' => $sha256sum }, 'intent' => ($intent || 'buildenv') };
 }
 
 sub add_slsa_materials_config {
   my ($buildinfo, $prp, $config) = @_;
   my $sha256sum = Digest::SHA::sha256_hex($config);
   my ($prpa, $filename) = ("$prp/noarch", '_config');
-  my $uri;
-  if ($buildinfo->{'slsadownloadurl'} && $buildinfo->{'slsadownloadurl'} =~ /\/_slsa$/) {
-    # using the source publishing server
-    my $server = $buildinfo->{'slsadownloadurl'};
-    $uri = BSHTTP::urlencode("$server/$prpa/$filename/$sha256sum");
-  } else {
-    # using the api server
-    my $server = $buildinfo->{'slsadownloadurl'} || $buildinfo->{'srcserver'} || $srcserver;
-    $uri = BSHTTP::urlencode("$server/slsa/$prpa/$filename/$sha256sum");
-  }
-  push @{$buildinfo->{'materials'}}, { 'uri' => $uri, 'digest' => { 'sha256' => $sha256sum } };
+  my $uri = generate_slsa_binaryuri($buildinfo, $prpa, $filename, $sha256sum);
+  push @{$buildinfo->{'materials'}}, { 'name' => $filename, 'uri' => $uri, 'digest' => { 'sha256' => $sha256sum }, 'intent' => 'buildconfig' };
 }
 
 $Build::Kiwi::urlmapper = sub {return '_obsrepositories'}  unless $Build::Kiwi::urlmapper;
@@ -3605,14 +3778,14 @@ sub dobuild {
   my $repoid = $buildinfo->{'repository'};
   my $arch = $buildinfo->{'arch'};
   my $helperarch = $buildinfo->{'hostarch'} || $arch;
-  my $kiwimode = getkiwimode($buildinfo);
+  my $imagemode = getimagemode($buildinfo);
   my $kiwiorigins;
   my $stats = {};
   my $deltamode = $buildinfo->{'file'} eq '_delta' ? 1 : undef;
   my $ptfmode = $buildinfo->{'file'} eq '_ptf' ? 1 : undef;
   my $followupmode = $buildinfo->{'followupfile'};
   my $followupcopy = {};
-  my $needobspackage;
+  my $needsobspackage;
 
   my $helper = '';
   /^\Q$helperarch\E:(.*)$/ && ($helper = $1) for @{$BSCando::cando{$hostarch}};
@@ -3642,7 +3815,7 @@ sub dobuild {
   rm_rf($oldpkgdir) if -d $oldpkgdir;
 
   # create buildenv data
-  if (!$kiwimode && !$followupmode && !$deltamode && !$ptfmode) {
+  if (!$imagemode && !$followupmode && !$deltamode && !$ptfmode) {
     $buildinfo->{'outbuildinfo'} = {
       'project' => $projid,
       'package' => $packid,
@@ -3690,8 +3863,8 @@ sub dobuild {
     readbuildenv($buildinfo, $srcdir);
     unlink("$srcdir/_buildenv.$buildinfo->{'repository'}.$buildinfo->{'arch'}");
     print "packages, ";
-    if (($kiwimode || '') eq 'product') {
-      getbinaries_kiwiproduct($buildinfo, $pkgdir, $srcdir, {});
+    if ($imagemode && ($imagemode eq 'kiwiproduct' || $imagemode eq 'productcompose')) {
+      getbinaries_product($buildinfo, $pkgdir, $srcdir, {});
       $followupcopy->{$_} = readstr("$srcdir/$_") for grep {$_ eq '_channel' || /\.report$/} ls($srcdir);
     } else {
       getbinaries($buildinfo, $pkgdir, $srcdir, $preinstallimagedata);
@@ -3700,47 +3873,52 @@ sub dobuild {
     $buildinfo->{'rootforbuild'} = 1 if $buildinfo->{'file'} =~ /\.kiwi$/;
     $buildinfo->{'file'} = $followupmode;
     # recalc kiwimode as we changed the file
-    $kiwimode = getkiwimode($buildinfo);
+    $imagemode = getimagemode($buildinfo);
     @meta = split("\n", readstr("$srcdir/meta"));
   } else {
-    $kiwiorigins = {} if $kiwimode;	# always for kiwi
-    my $needpubkey;
-    my $needsslcert;
-    my $needappxsslcert;
+    $kiwiorigins = {} if $imagemode;	# always for image builds
+    my $needspubkey;
+    my $needssslcert;
+    my $needsappxsslcert;
+    my $needsbinariesforbuild;
     push @meta, getsources($buildinfo, $srcdir);
     importbuild() unless defined &Build::queryhdrmd5;
-    if (!$kiwimode && -s "$srcdir/$buildinfo->{'file'}") {
+    $buildinfo->{'buildtype'} = Build::recipe2buildtype($buildinfo->{'file'});
+    if (!$imagemode && -s "$srcdir/$buildinfo->{'file'}") {
       # check for build markers
       local *F;
       if (open(F, '<', "$srcdir/$buildinfo->{'file'}")) {
 	while(<F>) {
 	  chomp;
-	  if (/^#\s*needsbinariesforbuild\s*$/s) {
-	    undef $preinstallimagedata;		# can't use an image, sorry
-	    $kiwiorigins = {};			# but collect origins
-	  }
-	  $needpubkey = 1 if /^#\s*needspubkeyforbuild\s*$/s;
-	  $needsslcert = 1 if /^#\s*needssslcertforbuild\s*$/s;
+	  $needsbinariesforbuild = 1 if /^#\s*needsbinariesforbuild\s*$/s;
+	  $needspubkey = 1 if /^#\s*needspubkeyforbuild\s*$/s;
+	  $needssslcert = 1 if /^#\s*needssslcertforbuild\s*$/s;
 	  # On Debian we cannot add a commented out line in a dsc, use a tag instead
 	  # that can be generated by adding "XS-Obs: needssslcertforbuild" to debian/control
-	  $needsslcert = 1 if /^Obs:\s*needssslcertforbuild\s*$/s;
-	  $needappxsslcert = 1 if /^(?:#|Obs:)\s*needsappxsslcertforbuild\s*$/s;
-	  $needobspackage = 1 if /\@OBS_PACKAGE\@/;
+	  $needssslcert = 1 if /^Obs:\s*needssslcertforbuild\s*$/s;
+	  $needsappxsslcert = 1 if /^(?:#|Obs:)\s*needsappxsslcertforbuild\s*$/s;
+	  $needsobspackage = 1 if /\@OBS_PACKAGE\@/;
 	}
 	close F;
       }
     }
+    my $buildtype = $buildinfo->{'buildtype'} || '';
+    $needsbinariesforbuild = 1 if $buildtype eq 'mkosi' || $buildtype eq 'livebuild' || $buildtype eq 'appimage' || $buildtype eq 'simpleimage';
+    if ($needsbinariesforbuild) {
+      undef $preinstallimagedata;		# can't use a preinstall image, sorry
+      $kiwiorigins = {};			# but collect origins
+    }
+    $buildinfo->{'forcebinaryidmeta'} = 1 if $buildtype eq 'mkosi' || $buildtype eq 'livebuild' || $buildtype eq 'appimage' || $buildtype eq 'simpleimage' || $buildtype eq 'preinstallimage';
     getobsgendiffdata($buildinfo, $srcdir) if $buildinfo->{'obsgendiff'};
-    getsslcert($buildinfo, $srcdir, $needappxsslcert ? 'appx' : undef) if $needsslcert || $needappxsslcert;
-    getpubkey($buildinfo, $srcdir) if $needpubkey;
+    getsslcert($buildinfo, $srcdir, $needsappxsslcert ? 'appx' : undef) if $needssslcert || $needsappxsslcert;
+    getpubkey($buildinfo, $srcdir) if $needspubkey;
     readbuildenv($buildinfo, $srcdir);
     print "packages, ";
-    if (($kiwimode || '') eq 'product') {
-      my $kiwi = readxml("$srcdir/$buildinfo->{'file'}", $BSKiwiXML::kiwidesc, 1);
-      for my $productvar (@{$kiwi->{'instsource'}->{'productoptions'}->{'productvar'} || []}) {
-        $buildinfo->{'rpmhdrs_only'} = 1 if $productvar->{'name'} eq 'RPMHDRS_ONLY' and $productvar->{'_content'} eq 'true';
-      }
-      push @meta, getbinaries_kiwiproduct($buildinfo, $pkgdir, $srcdir, $kiwiorigins);
+    if (($imagemode || '') eq 'kiwiproduct') {
+      $buildinfo->{'rpmhdrs_only'} = 1 if kiwiproduct_is_rpmhdrsonly("$srcdir/$buildinfo->{'file'}");
+      push @meta, getbinaries_product($buildinfo, $pkgdir, $srcdir, $kiwiorigins);
+    } elsif (($imagemode || '') eq 'productcompose') {
+      push @meta, getbinaries_product($buildinfo, $pkgdir, $srcdir, $kiwiorigins);
     } else {
       push @meta, getbinaries($buildinfo, $pkgdir, $srcdir, $preinstallimagedata, $kiwiorigins);
     }
@@ -3751,7 +3929,7 @@ sub dobuild {
   writestr("$buildroot/.build.meta", undef, join("\n", @meta)."\n");
 
   my @configpath;
-  if ($kiwimode) {
+  if ($imagemode) {
     @configpath = map {"path=$_->{'project'}/$_->{'repository'}"} @{$buildinfo->{'syspath'} || $buildinfo->{'path'} || []};
     unshift @configpath, "path=$projid/$repoid" unless @configpath && $configpath[0] eq "path=$projid/$repoid";
   }
@@ -3766,17 +3944,18 @@ sub dobuild {
   $buildinfo->{'slsa_provenance_config'} = $config if $buildinfo->{'slsaprovenance'};
   $buildinfo->{'outbuildinfo'}->{'config'} = $config;
   writestr("$buildroot/.build.config", undef, $config);
-  add_slsa_materials_config($buildinfo, "$projid/$repoid", $config);
+  add_slsa_materials_config($buildinfo, "$projid/$repoid", $config) if $buildinfo->{'slsaprovenance'};
 
   my $bconf = Build::read_config($buildinfo->{'arch'}, "$buildroot/.build.config");
   my $useccache = $buildinfo->{'ccache'} ? 1 : 0;
   my $ccachetype = $useccache ? $buildinfo->{'ccache'} : undef;
+  $buildinfo->{'slsa_provenance_version'} = $bconf->{'buildflags:slsaversion'} if $buildinfo->{'slsaprovenance'};
 
   if ($buildinfo->{'modularity_meta'}) {
     getmodulemddata($buildinfo, $srcdir, $bconf);
   }
 
-  if ($oldpkgdir && !$kiwimode && $buildinfo->{'file'} ne 'preinstallimage') {
+  if ($oldpkgdir && !$imagemode && $buildinfo->{'file'} ne 'preinstallimage') {
     getoldpackages($buildinfo, $oldpkgdir, $useccache);
     getlinkedccache($buildinfo, $oldpkgdir) if $useccache && ! -f "$oldpkgdir/_ccache.tar";
   }
@@ -3811,9 +3990,8 @@ sub dobuild {
   }
 
   my $release = $buildinfo->{'release'};
-  #FIXME2.6: drop the following line
-  my $disturl = "obs://$BSConfig::obsname/$projid/$repoid/$buildinfo->{'srcmd5'}-$packid";
-  $disturl = $buildinfo->{'disturl'} if $buildinfo->{'disturl'};
+  my $disturl;
+  $disturl = $buildinfo->{'disturl'} if $buildinfo->{'disturl'} && !$bconf->{'buildflags:nodisturl'};
 
   my @args;
   push @args, $helper if $helper;
@@ -3824,7 +4002,7 @@ sub dobuild {
   my $imagebins = $preinstallimagedata->{'imagebins'} || {};
   for my $bdep (@bdep) {
     next if $bdep->{'package'} || (($bdep->{'repoarch'} || '') eq 'src');
-    next if $kiwimode && $bdep->{'noinstall'};
+    next if $imagemode && $bdep->{'noinstall'};
     my $bin = $bdep->{'name'};
     if ($bdep->{'sysroot'}) {
       $bin = "__sysroot__$bin";
@@ -3849,7 +4027,7 @@ sub dobuild {
   push @rpmlist, "preinstall: ".join(' ', map {$_->{'name'}} grep {$_->{'preinstall'}} @bdep);
   push @rpmlist, "vminstall: ".join(' ', map {$_->{'name'}} grep {$_->{'vminstall'}} @bdep);
   push @rpmlist, "runscripts: ".join(' ', map {$_->{'name'}} grep {$_->{'runscripts'}} @bdep);
-  if (!$kiwimode) {
+  if (!$imagemode) {
     push @rpmlist, "noinstall: ".join(' ', map {$_->{'name'}} grep {$_->{'noinstall'}} @bdep);
     push @rpmlist, "installonly: ".join(' ', map {$_->{'name'}} grep {$_->{'installonly'}} @bdep);
   }
@@ -3858,8 +4036,8 @@ sub dobuild {
   print "building...\n";
 
   die("$buildinfo->{'error'}\n") if $buildinfo->{'error'};
-  if (($kiwimode || '') eq 'product') {
-    patchproductkiwi($buildinfo, "$srcdir/$buildinfo->{'file'}", \@meta);
+  if (($imagemode || '') eq 'kiwiproduct') {
+    kiwiproduct_patch_recipe($buildinfo, "$srcdir/$buildinfo->{'file'}", \@meta);
   }
 
   push @args, "$statedir/build/build";
@@ -3929,20 +4107,20 @@ sub dobuild {
   push @args, "--ccache-type=$ccachetype" if $useccache && $oldpkgdir && $ccachetype;
   push @args, '--threads', $threads if $threads;
   push @args, '--reason', "Building $packid for project '$projid' repository '$repoid' arch '$arch' srcmd5 '$buildinfo->{'srcmd5'}'";
-  push @args, '--disturl', $disturl;
+  push @args, '--disturl', $disturl if $disturl;
   push @args, '--linksources' if $localkiwi;
-  push @args, '--signdummy' if ($kiwimode || '') eq 'product' && -e "$statedir/build/signdummy";
+  push @args, '--signdummy' if $imagemode && ($imagemode eq 'kiwiproduct' || $imagemode eq 'productcompose') && -e "$statedir/build/signdummy";
   push @args, '--vcs', $buildinfo->{'vcs'} if $buildinfo->{'vcs'} && $bconf->{'buildflags:setvcs'};
   if ($packid =~ /(?<!^_product)(?<!^_patchinfo):./) {
     $packid =~ /^(.*):(.*?)$/;
-    push @args, "--obspackage=$1" if $needobspackage;
+    push @args, "--obspackage=$1" if $needsobspackage;
     push @args, "--buildflavor=$2";
     $buildinfo->{'buildflavor'} = $2;
   } else {
-    push @args, "--obspackage=$packid" if $needobspackage;
+    push @args, "--obspackage=$packid" if $needsobspackage;
   }
   push @args, "$srcdir/$buildinfo->{'file'}";
-  if (($kiwimode || '') eq 'image') {
+  if (($imagemode || '') eq 'kiwiimage') {
     # expand obsrepositories:/ directive for appliances
     my $kiwi = Build::parse(undef, "$srcdir/$buildinfo->{'file'}") || {};
     if (grep {$_->{'project'} eq '_obsrepositories'} @{$kiwi->{'path'} || []}) {
@@ -3957,11 +4135,11 @@ sub dobuild {
 	push @args, '--kiwi-parameter', '--add-repoprio', '--kiwi-parameter', $prio;	# different prio for smart?
       }
     }
-    for my $containerurl (@{$buildinfo->{'containerurl'} || []}) {
-      push @args, '--kiwi-parameter', "--set-container-derived-from=$containerurl";
+    if (@{$buildinfo->{'containerurl'} || []}) {
+      push @args, '--kiwi-parameter', '--set-container-derived-from='.join(',', @{$buildinfo->{'containerurl'}});
     }
   }
-  if ($kiwimode && $kiwimode ne 'product') {
+  if ($imagemode && $imagemode ne 'kiwiproduct' && $imagemode ne 'productcompose') {
     # touch pkgsummaries marker so we get summaries in the report files
     mkdir_p("$srcdir/repos");
     BSUtil::touch("$srcdir/repos/.pkgsummaries");
@@ -3974,32 +4152,49 @@ sub dobuild {
   print "\n";
 
   my $ret = $?;
-  if ($ret == 512) { # system exit code 2 maps to 2 * 256
-    if (($buildinfo->{'reason'} || '') eq "rebuild counter sync") {
-      $ret = 0;
-    } else {
-      if ($vm =~ /(xen|kvm|qemu|zvm|emulator|pvm|openstack)/) {
-        my $statsfile = "$buildroot/.mount/.build.packages/OTHER/_statistics";
-        updatestatsfromfile($stats, $statsfile) if -e $statsfile;
-      }
-      $stats->{'times'}->{'total'}->{'time'} = { 'unit' => 's', '_content' => (time() - $starttime) };
-      mkdir_p("$buildroot/.build.packages/OTHER");
-      writexml("$buildroot/.build.packages/OTHER/_statistics.new", "$buildroot/.build.packages/OTHER/_statistics", $stats, $BSXML::buildstatistics);
-      return 2;
+
+  my $resultdir = "$buildroot/.build.packages";
+  $resultdir = "$buildroot/.mount/.build.packages" if $vm =~ /(xen|kvm|qemu|zvm|emulator|pvm|openstack)/;
+
+  # change exit code to unchanged if the same_result_marker is present
+  if ($ret == 0 && ($buildinfo->{'reason'} || '') ne 'rebuild counter sync') {
+    $ret = 2 * 256 if -e "$resultdir/same_result_marker";
+  }
+
+  # ignore unchanged exit code if we do a rebuild counter sync build
+  $ret = 0 if $ret == 2 * 256 && ($buildinfo->{'reason'} || '') eq 'rebuild counter sync';
+
+  # update the statistics with vm data if the build succeeded or is unchanged
+  if (($ret == 0 || $ret == 2 * 256) && $vm =~ /(xen|kvm|qemu|zvm|emulator|pvm|openstack)/) {
+    my $statsfile = "$resultdir/OTHER/_statistics";
+    updatestatsfromfile($stats, $statsfile) if -e $statsfile;
+  }
+
+  # rename build result to final location for succeeded/dynamic buildrequires changed
+  if (($ret == 0 || $ret == 9 * 256) && $resultdir ne "$buildroot/.build.packages") {
+    rm_rf("$buildroot/.build.packages");
+    if (!rename($resultdir, "$buildroot/.build.packages")) {
+      print "final rename failed: $!\n";
+      return 1;
     }
+  }
+  $resultdir = "$buildroot/.build.packages";
+
+  # write statistics for succeeded/unchanged builds
+  if ($ret == 0 || $ret == 2 * 256) {
+    $stats->{'times'}->{'total'}->{'time'} = { 'unit' => 's', '_content' => (time() - $starttime) };
+    mkdir_p("$resultdir/OTHER");
+    writexml("$resultdir/OTHER/_statistics.new", "$resultdir/OTHER/_statistics", $stats, $BSXML::buildstatistics);
+  }
+
+  if ($ret == 2 * 256) {		# exit code 2: unchanged
+    return 2;
   } elsif ($ret == 3 * 256) {
     return 3;
   } elsif ($ret == 4 * 256) {
     return 4;
-  } elsif ($ret == 9 * 256) {
-    if ($vm =~ /(xen|kvm|qemu|zvm|emulator|pvm|openstack)/) {
-      rm_rf("$buildroot/.build.packages");
-      if (!rename("$buildroot/.mount/.build.packages", "$buildroot/.build.packages")) {
-        print "final rename failed: $!\n";
-        return 1;
-      }
-    }
-    return -e "$buildroot/.build.packages/OTHER/_statistics" ? 9 : 1;
+  } elsif ($ret == 9 * 256) {		# exit code 9: dynamic buildrequires changed
+    return -e "$resultdir/OTHER/_statistics" ? 9 : 1;
   }
   if ($ret) {
     return 1;
@@ -4009,46 +4204,29 @@ sub dobuild {
     return 1;
   }
 
-  if ($vm =~ /(xen|kvm|qemu|zvm|emulator|pvm|openstack)/) {
-    rm_rf("$buildroot/.build.packages");
-    # move directory with extracted build results
-    if(!rename("$buildroot/.mount/.build.packages", "$buildroot/.build.packages")) {
-      print "final rename failed: $!\n";
-      return 1;
-    }
-    # XXX: extracted cpio is flat but code below expects those directories...
-    symlink('.', "$buildroot/.build.packages/SRPMS");
-    symlink('.', "$buildroot/.build.packages/DEBS");
-    symlink('.', "$buildroot/.build.packages/KIWI");
-    # convert build statistics into xml
-    my $statsfile = "$buildroot/.build.packages/OTHER/_statistics";
-    updatestatsfromfile($stats, $statsfile) if -e $statsfile;
-  }
-  $stats->{'times'}->{'total'}->{'time'} = { 'unit' => 's', '_content' => (time() - $starttime) };
-  mkdir_p("$buildroot/.build.packages/OTHER");
-  writexml("$buildroot/.build.packages/OTHER/_statistics.new", "$buildroot/.build.packages/OTHER/_statistics", $stats, $BSXML::buildstatistics);
-
   if ($buildinfo->{'outbuildinfo'}) {
-    writexml("$buildroot/.build.packages/OTHER/_buildenv", undef, $buildinfo->{'outbuildinfo'}, $BSXML::buildinfo);
+    writexml("$resultdir/OTHER/_buildenv", undef, $buildinfo->{'outbuildinfo'}, $BSXML::buildinfo);
   }
 
   if (!$followupmode && $kiwiorigins) {
     $buildinfo->{'buildtime'} = time();
-    if (!$kiwimode) {
+    if (!$imagemode) {
       # some builds like python-venv also write a .packages file
-      createreport($buildinfo, "$buildroot/.build.packages/OTHER", $kiwiorigins, $srcdir);
-    } elsif ($kiwimode eq 'docker') {
-      createreport($buildinfo, "$buildroot/.build.packages/DOCKER", $kiwiorigins, $srcdir);
-    } elsif ($kiwimode ne 'product') {
-      createreport($buildinfo, "$buildroot/.build.packages/KIWI", $kiwiorigins, $srcdir);
-    } else {
+      createreport($buildinfo, "$resultdir/OTHER", $kiwiorigins, $srcdir);
+    } elsif ($imagemode eq 'docker') {
+      createreport($buildinfo, "$resultdir/DOCKER", $kiwiorigins, $srcdir);
+    } elsif ($imagemode eq 'kiwiproduct') {
       # as a special service we also create a channel file from the report files
-      createchannel($buildinfo, "$buildroot/.build.packages/OTHER", $kiwiorigins, $srcdir);
+      createchannel($buildinfo, "$resultdir/OTHER", $kiwiorigins, $srcdir);
+    } elsif ($imagemode eq 'productcompose') {
+      annotatereport($buildinfo, "$resultdir/PRODUCT", $kiwiorigins);
+    } else {
+      createreport($buildinfo, "$resultdir/KIWI", $kiwiorigins, $srcdir);
     }
   }
 
   if (%$followupcopy) {
-    writestr("$buildroot/.build.packages/OTHER/$_", undef, $followupcopy->{$_}) for keys %$followupcopy;
+    writestr("$resultdir/OTHER/$_", undef, $followupcopy->{$_}) for keys %$followupcopy;
   }
   return 0;
 }
@@ -4056,37 +4234,37 @@ sub dobuild {
 
 sub updatestatsfromfile {
   my ($stats, $filepath) = @_;
-      my $iosectors = 0;
-      my $iorequests = 0;
-      open(FILE, "<", $filepath) || die;
-      my %timekeys = (
-	'TIME_preinstall' => 'preinstall',
-	'TIME_install' => 'install',
-	'TIME_main_build' => 'main',
-	'TIME_postchecks' => 'postchecks',
-	'TIME_rpmlint' => 'rpmlint',
-	'TIME_buildcmp' => 'buildcmp',
-	'TIME_deltarpms' => 'deltarpms',
-	'TIME_cpusteal' => 'cpusteal',
-      );
-      while (<FILE>) {
-        chomp;
-        my ($key, $value) = split(": ", $_);
-        if ($key eq "MAX_mb_used_on_disk" ){
-          $stats->{'disk'}->{'usage'}->{'size'} = { 'unit' => 'M', '_content' => $value };
-        } elsif ($key eq "MAX_mb_used_memory" ){
-          $stats->{'memory'}->{'usage'}->{'size'} = { 'unit' => 'M', '_content' => $value };
-        } elsif ($key eq "IO_requests_read" || $key eq "IO_requests_write" ){
-          $iorequests += $value;
-          $stats->{'disk'}->{'usage'}->{'io_requests'} = $iorequests;
-        } elsif ($key eq "IO_sectors_read" || $key eq "IO_sectors_write" ){
-          $iosectors += $value;
-          $stats->{'disk'}->{'usage'}->{'io_sectors'} = $iosectors;
-        } elsif ($timekeys{$key}) {
-          $stats->{'times'}->{$timekeys{$key}}->{'time'} = { 'unit' => 's', '_content' => $value };
-        }
-      }
-      close FILE;
+  my $iosectors = 0;
+  my $iorequests = 0;
+  open(FILE, "<", $filepath) || die;
+  my %timekeys = (
+    'TIME_preinstall' => 'preinstall',
+    'TIME_install' => 'install',
+    'TIME_main_build' => 'main',
+    'TIME_postchecks' => 'postchecks',
+    'TIME_rpmlint' => 'rpmlint',
+    'TIME_buildcmp' => 'buildcmp',
+    'TIME_deltarpms' => 'deltarpms',
+    'TIME_cpusteal' => 'cpusteal',
+  );
+  while (<FILE>) {
+    chomp;
+    my ($key, $value) = split(": ", $_);
+    if ($key eq "MAX_mb_used_on_disk" ){
+      $stats->{'disk'}->{'usage'}->{'size'} = { 'unit' => 'M', '_content' => $value };
+    } elsif ($key eq "MAX_mb_used_memory" ){
+      $stats->{'memory'}->{'usage'}->{'size'} = { 'unit' => 'M', '_content' => $value };
+    } elsif ($key eq "IO_requests_read" || $key eq "IO_requests_write" ){
+      $iorequests += $value;
+      $stats->{'disk'}->{'usage'}->{'io_requests'} = $iorequests;
+    } elsif ($key eq "IO_sectors_read" || $key eq "IO_sectors_write" ){
+      $iosectors += $value;
+      $stats->{'disk'}->{'usage'}->{'io_sectors'} = $iosectors;
+    } elsif ($timekeys{$key}) {
+      $stats->{'times'}->{$timekeys{$key}}->{'time'} = { 'unit' => 's', '_content' => $value };
+    }
+  }
+  close FILE;
 }
 
 sub buildkiwitree {
@@ -4116,13 +4294,13 @@ sub buildkiwitree {
 	$tree{$sf} = "d ". BSHTTP::urlencode($sf);
 	push @todo, $f, "$sf/";
       } elsif (-f $f) {
-        my $leadsigmd5 = '';
-	Build::queryhdrmd5($f, \$leadsigmd5) if $f =~ /\.rpm$/;
-	if ($leadsigmd5) {
-	  $tree{$sf} = "f ". BSHTTP::urlencode($sf) . " " . $leadsigmd5;
-	} else {
-	  $tree{$sf} = "f ". BSHTTP::urlencode($sf);
+	my $extra;
+	if ($f =~ /\.slsa_provenance\.json$/) {
+	  $extra = md5file($f);
+	} elsif ($f =~ /\.rpm$/) {
+	  Build::queryhdrmd5($f, \$extra);
 	}
+	$tree{$sf} = 'f ' . BSHTTP::urlencode($sf) . ($extra ? " $extra" : '');
       }
     }
   }
@@ -4197,6 +4375,13 @@ sub getkiwitreefiles {
   die("kiwitreefile does not work in rpmhdrs_only mode\n") if -e "$kiwitreefile.rpmhdrs_only";
   my @send;
   my %ok;
+  my $kiwidir;
+  if (-d "$buildroot/.build.packages/KIWI") {
+    $kiwidir = "$buildroot/.build.packages/KIWI";
+  } elsif (-d "$buildroot/.build.packages/PRODUCT") {
+    $kiwidir = "$buildroot/.build.packages/PRODUCT";
+  }
+  die("could not determine product build directory\n") unless $kiwidir;
   for my $f (@{$cgi->{'file'} || []}) {
     die("bad file $f\n") if "/$f/" =~ m!//!s;           # no dup slashes
     die("bad file $f\n") if "/$f/" =~ m!/\.\.?/!s;      # no . or ..
@@ -4206,13 +4391,13 @@ sub getkiwitreefiles {
     $f = '';
     for (@f) {
       $f .= $_;
-      die("bad file $f\n") if !$ok{$f} && (-l "$buildroot/.build.packages/KIWI/$f" || ! -d _);
+      die("bad file $f\n") if !$ok{$f} && (-l "$kiwidir/$f" || ! -d _);
       $ok{$f} = 1;
       $f .= '/';
     }
     $f .= $c;
-    die("bad file $f\n") if -l "$buildroot/.build.packages/KIWI/$f" || ! -f _;
-    push @send, { 'name' => $f, 'filename' => "$buildroot/.build.packages/KIWI/$f" };
+    die("bad file $f\n") if -l "$kiwidir/$f" || ! -f _;
+    push @send, { 'name' => $f, 'filename' => "$kiwidir/$f" };
   }
   BSServer::reply_cpio(\@send);
   return undef;
@@ -4333,9 +4518,9 @@ sub startbuild {
   }
   if ($localkiwi) {
     # make sure this is the right job for us
+    my $imagemode = getimagemode($buildinfo);
     my $jobname = ($buildinfo->{'arch'} || '<unknown>') . '/' . ($buildinfo->{'job'} || '<unknown>');
-    die("bad job: $jobname: not a kiwi job\n") unless $buildinfo->{'file'} =~ /\.kiwi$/;
-    die("bad job: $jobname: not a kiwi product job\n") unless $buildinfo->{'imagetype'} && $buildinfo->{'imagetype'}->[0] eq 'product';
+    die("bad job: $jobname: not a product job\n") unless $imagemode && ($imagemode eq 'kiwiproduct' || $imagemode eq 'productcompose');
   }
 
   $buildcode = codemd5('build');
@@ -4477,7 +4662,7 @@ sub periodic {
 	  warn("could not kill job\n");
 	  last;
 	}
-	append_nonfatal("$buildroot/.build.log", "\n\nJob seems to be stuck here, killed. (after $maxidle seconds of inactivity)\n");
+	append_nonfatal("$buildroot/.build.log", "\n\n$maxidle seconds (logidlelimit) elapsed without any output: build job terminated!\n");
 	$state->{'state'} = 'killed';
 	commitstate($state);
 	$locked = 0;
@@ -4508,6 +4693,7 @@ sub periodic {
   }
 }
 
+return 1 if $testcasemode;
 
 # better safe than sorry...
 my $startworkercode = '?';
@@ -4623,6 +4809,7 @@ if ($@) {
   append_nonfatal("$buildroot/.build.log", $workerid ? "$@(worker was $workerid)\n" : $@);
   print $@;
 }
+
 if ($buildinfo->{'followupfile'}) {
   my $buildsrcdir = "$buildroot/.build.packages/SOURCES";
   $buildsrcdir = "$buildroot/.build-srcdir" if $vm =~ /(xen|kvm|qemu|emulator)/;
@@ -4705,7 +4892,7 @@ if ($hostcheck) {
 }
 
 my $send_genbuildreqs;
-if ($ex != 3 && -e "$buildroot/.build.packages/OTHER/_generated_buildreqs") {
+if ($ex != 3 && $ex != 4 && -e "$buildroot/.build.packages/OTHER/_generated_buildreqs") {
   if (-s "$buildroot/.build.packages/OTHER/_generated_buildreqs" > 100000) {
     $ex = 1;
   } else {
@@ -4720,11 +4907,9 @@ if ($ex != 3 && -e "$buildroot/.build.packages/OTHER/_generated_buildreqs") {
   }
 }
 
+# collect files we want to send
 my @send;
 my $kiwitree;
-if ($ex == 0 && $buildinfo->{'reason'} ne "rebuild counter sync" && -f "$buildroot/.build.packages/same_result_marker") {
-  $ex = 2;
-}
 if ($ex == 0) {
   my @d;
   push @d, map {"RPMS/$_"} sort(ls("$buildroot/.build.packages/RPMS"));
@@ -4735,15 +4920,17 @@ if ($ex == 0) {
     push @d, 'SDEBS';
   }
   @d = ('ARCHPKGS') if $buildinfo->{'file'} =~ /PKGBUILD$/;
+  @d = ('APKS') if $buildinfo->{'file'} =~ /APKBUILD$/;
   @d = ('KIWI') if $buildinfo->{'file'} =~ /\.kiwi$/;
-  @d = ('DOCKER') if $buildinfo->{'file'} =~ /Dockerfile$/;
+  @d = ('PRODUCT') if $buildinfo->{'file'} =~ /\.productcompose$/;
+  @d = ('DOCKER') if $buildinfo->{'file'} =~ /Dockerfile(?:\.|$)/;
   @d = ('FISSILE') if $buildinfo->{'file'} =~ /fissile\.yml$/;
   @d = ('HELM') if $buildinfo->{'file'} =~ /Chart\.yaml$/;
   push @d, 'OTHER';
   for my $d ('.', @d) {
     my @files = sort(ls("$buildroot/.build.packages/$d"));
     @files = grep {$_ ne 'same_result_marker' && $_ ne '.kiwitree'} @files;
-    if ($d eq 'KIWI') {
+    if ($d eq 'KIWI' || $d eq 'PRODUCT') {
       $kiwitree = [ grep {-d "$buildroot/.build.packages/$d/$_"} @files ];
       undef $kiwitree unless @$kiwitree;
       undef $kiwitree if defined($BSConfig::nokiwitree) && $BSConfig::nokiwitree;
@@ -4768,9 +4955,15 @@ if ($ex == 0) {
   @send = map {{name => (split('/', $_))[-1], filename => $_}} @send;
   @send = grep {$_->{'name'} ne '_generated_buildreqs'} @send;
 
+  # add slsa provenance files if requested
   @send = grep {$_->{'name'} !~ /slsa_provenance.(?:json|config)$/} @send;
   if ($buildinfo->{'slsaprovenance'}) {
-    my $slsa_provenance = generate_slsa_provenance_statement($buildinfo, \@send);
+    my $slsa_provenance;
+    if (($buildinfo->{'slsa_provenance_version'} || '') eq 'v1') {
+      $slsa_provenance = generate_slsa_provenance_statement_v1($buildinfo, \@send);
+    } else {
+      $slsa_provenance = generate_slsa_provenance_statement_v02($buildinfo, \@send);
+    }
     push @send, { 'name' => '_slsa_provenance.json', 'data' => $slsa_provenance };
     push @send, { 'name' => '_slsa_provenance.config', 'data' => $buildinfo->{'slsa_provenance_config'}} if $buildinfo->{'slsa_provenance_config'};
   }
@@ -4779,7 +4972,9 @@ if ($ex == 0) {
     my $kiwitreefile = "$buildroot/.build.packages/.kiwitree";
     eval {
       die(".kiwitree already exists\n") if -e $kiwitreefile;
-      buildkiwitree($kiwitreefile, map { ("$buildroot/.build.packages/KIWI/$_", "$_/") } @$kiwitree);
+      my $kiwidir = "$buildroot/.build.packages/KIWI";
+      $kiwidir = "$buildroot/.build.packages/PRODUCT" if $buildinfo->{'file'} =~ /\.productcompose$/;
+      buildkiwitree($kiwitreefile, map { ("$kiwidir/$_", "$_/") } @$kiwitree);
       BSUtil::touch("$kiwitreefile.rpmhdrs_only") if $buildinfo->{'rpmhdrs_only'};
       push @send, { name => '.kiwitree', filename => $kiwitreefile };
     };
@@ -4793,7 +4988,16 @@ if ($ex == 0) {
     print "build did not create anything to send back!\n";
     $ex = 1;
   }
+} elsif ($ex == 2) {
+  my $statsfile = "$buildroot/.build.packages/OTHER/_statistics";
+  push @send, { name => '_statistics', filename => $statsfile } if -e $statsfile;
+  # ccache is enabled and there is no tar from previous builds,
+  # this is a good ccache archive and should be used for subsequent builds.
+  my $ccachetar = "$buildroot/.build.packages/OTHER/_ccache.tar";
+  my $occachetar = "$buildroot/.build.oldpackages/_ccache.tar";
+  push @send, {name => '_ccache.tar', filename => $ccachetar} if -e $ccachetar && !-e $occachetar;
 }
+
 my $code;
 if (!$ex) {
   print "build succeeded, sending everything back...\n";
@@ -4801,14 +5005,6 @@ if (!$ex) {
 } elsif ($ex == 2) {
   print "build succeeded, but does not differ from old build result...\n";
   $code = 'unchanged';
-  my $statsfile = "$buildroot/.build.packages/OTHER/_statistics";
-  push @send, {name => '_statistics', filename => $statsfile} if -e $statsfile;
-
-  # ccache is enabled and there is no tar from previous builds,
-  # this is a good ccache archive and should be used for subsequent builds.
-  my $ccachetar = "$buildroot/.build.packages/OTHER/_ccache.tar";
-  my $occachetar = "$buildroot/.build.oldpackages/_ccache.tar";
-  push @send, {name => '_ccache.tar', filename => $ccachetar} if -e $ccachetar && !-e $occachetar;
 } elsif ($ex == 3 && $buildinfo->{'nobadhost'}) {
   print "build failed (ignored bad build host flag)...\n";
   BSUtil::appendstr("$buildroot/.build.log", "\n$buildinfo->{'nobadhost'}\n");
@@ -4843,8 +5039,11 @@ if (!$ex) {
   print "build failed, send back logfile...\n";
   $code = 'failed';
 }
+
+# always send the log and the meta files
 push @send, {name => 'meta', filename => "$buildroot/.build.meta"} if -e "$buildroot/.build.meta";
 push @send, {name => 'logfile', filename => "$buildroot/.build.log"};
+
 if ($code eq 'badhost') {
   # only transmit the logfile in the badhost case
   @send = ();
@@ -4856,7 +5055,7 @@ if ($code eq 'badhost') {
     push @send, {name => 'logfile', data => "no build log?\n"};
   }
 }
-push @send, $send_genbuildreqs if $send_genbuildreqs && $ex != 2 && $ex != 3;
+push @send, $send_genbuildreqs if $send_genbuildreqs && $ex != 2 && $ex != 3 && $ex != 4;
 
 if (!$testmode) {
   my $param = {

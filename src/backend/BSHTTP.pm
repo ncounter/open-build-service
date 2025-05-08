@@ -296,12 +296,11 @@ sub read_data {
 	$cl = $maxl = length($qu);
       }
     }
-    $cl -= $maxl if defined($cl);
-    $ret = substr($qu, 0, $maxl);
+    $cl -= $maxl if defined $cl;
     $req->{'__cl'} = $cl;
-    $req->{'__data'} = substr($qu, $maxl);
+    $req->{'__data'} = substr($qu, $maxl, length($qu) - $maxl, '');
     $req->{'__eof'} = 1 if defined($cl) && $cl == 0;
-    return $ret;
+    return $qu;
   }
 }
 
@@ -508,7 +507,10 @@ sub swrite {
   $data = sprintf("%X\r\n", length($data)).$data."\r\n" if $chunked;
   while (length($data)) {
     my $l = syswrite($sock, $data, length($data));
-    die("socket write: $!\n") unless $l;
+    if (!$l) {
+      next if !defined($l) && ($! == POSIX::EINTR || $! == POSIX::EWOULDBLOCK);
+      die("socket write: $!\n");
+    }
     $data = substr($data, $l);
   }
 }

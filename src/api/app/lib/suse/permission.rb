@@ -8,7 +8,7 @@
 module Suse
   class Permission
     def to_s
-      "OpenSUSE Permissions for user #{@user.login}"
+      "openSUSE Permissions for user #{@user.login}"
     end
 
     def initialize(u)
@@ -32,7 +32,7 @@ module Suse
 
       raise ArgumentError, "unable to find project object for #{project}" if prj.nil?
 
-      return true if @user.has_global_permission?('global_project_change')
+      return true if @user.global_permission?('global_project_change')
 
       @user.can_modify?(prj)
     end
@@ -61,11 +61,11 @@ module Suse
       false
     end
 
-    def method_missing(perm, *_args, &_block)
+    def method_missing(perm, *_args, &)
       logger.debug "Dynamic Permission requested: <#{perm}>"
 
       if @user
-        if @user.has_global_permission?(perm.to_s)
+        if @user.global_permission?(perm.to_s)
           logger.debug "User #{@user.login} has permission #{perm}"
           true
         else
@@ -78,8 +78,6 @@ module Suse
       end
     end
 
-    def logger
-      Rails.logger
-    end
+    delegate :logger, to: :Rails
   end
 end

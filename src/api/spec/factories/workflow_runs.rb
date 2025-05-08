@@ -1,6 +1,6 @@
 FactoryBot.define do
   factory :workflow_run do
-    token { create(:workflow_token) }
+    token { association :workflow_token }
     status { 'running' }
     scm_vendor { 'github' }
     hook_event { 'pull_request' }
@@ -10,6 +10,8 @@ FactoryBot.define do
     repository_name { Faker::Lorem.word }
     repository_owner { Faker::Team.creature }
     response_url { 'https://api.github.com' }
+    workflow_configuration_path { '.obs/workflows.yml' }
+    workflow_configuration_url { nil }
     request_headers do
       <<~END_OF_HEADERS
         HTTP_X_GITHUB_EVENT: pull_request
@@ -18,21 +20,28 @@ FactoryBot.define do
       END_OF_HEADERS
     end
     request_payload do
-      File.read('spec/support/files/request_payload_github_pull_request_opened.json')
+      File.read('spec/fixtures/files/request_payload_github_pull_request_opened.json')
+    end
+    workflow_configuration do
+      File.read('spec/fixtures/files/workflows.yml')
     end
 
-    trait 'with_configuration_path' do
-      workflow_configuration_path { '.obs/workflows.yml' }
-    end
-
-    trait 'with_configuration_url' do
+    trait :with_url do
+      workflow_configuration_path { nil }
       workflow_configuration_url { 'http://example.com/workflows.yml' }
+    end
+
+    # Emulating the old workflow runs, before we started to store them
+    trait :without_configuration_data do
+      workflow_configuration_path { nil }
+      workflow_configuration_url { nil }
+      workflow_configuration { nil }
     end
 
     trait :pull_request_closed do
       hook_action { 'closed' }
       request_payload do
-        File.read('spec/support/files/request_payload_github_pull_request_closed.json')
+        File.read('spec/fixtures/files/request_payload_github_pull_request_closed.json')
       end
     end
 
@@ -47,7 +56,7 @@ FactoryBot.define do
         END_OF_HEADERS
       end
       request_payload do
-        File.read('spec/support/files/request_payload_github_push.json')
+        File.read('spec/fixtures/files/request_payload_github_push.json')
       end
     end
 
@@ -62,7 +71,7 @@ FactoryBot.define do
         END_OF_HEADERS
       end
       request_payload do
-        File.read('spec/support/files/request_payload_github_tag_push.json')
+        File.read('spec/fixtures/files/request_payload_github_tag_push.json')
       end
     end
 
@@ -118,6 +127,40 @@ FactoryBot.define do
                                status: SCMStatusReport.statuses[:fail])
       end
     end
+
+    trait :pull_request_labeled do
+      hook_event { 'pull_request' }
+      hook_action { 'labeled' }
+      generic_event_type { 'pull_request' }
+      event_source_name { '1' }
+      request_headers do
+        <<~END_OF_HEADERS
+          HTTP_X_GITHUB_EVENT: pull_request
+          HTTP_X_GITHUB_HOOK_ID: 12345
+          HTTP_X_GITHUB_DELIVERY: b4a6d950-110b-11ee-9095-943f7b2ddd1c
+        END_OF_HEADERS
+      end
+      request_payload do
+        File.read('spec/fixtures/files/request_payload_github_pull_request_labeled.json')
+      end
+    end
+  end
+
+  trait :pull_request_unlabeled do
+    hook_event { 'pull_request' }
+    hook_action { 'unlabeled' }
+    generic_event_type { 'pull_request' }
+    event_source_name { '1' }
+    request_headers do
+      <<~END_OF_HEADERS
+        HTTP_X_GITHUB_EVENT: pull_request
+        HTTP_X_GITHUB_HOOK_ID: 12345
+        HTTP_X_GITHUB_DELIVERY: b4a6d950-110b-11ee-9095-943f7b2ddd1c
+      END_OF_HEADERS
+    end
+    request_payload do
+      File.read('spec/fixtures/files/request_payload_github_pull_request_unlabeled.json')
+    end
   end
 
   # GitLab
@@ -132,20 +175,20 @@ FactoryBot.define do
       END_OF_HEADERS
     end
     request_payload do
-      File.read('spec/support/files/request_payload_gitlab_pull_request_opened.json')
+      File.read('spec/fixtures/files/request_payload_gitlab_pull_request_opened.json')
     end
 
     trait :pull_request_closed do
       hook_action { 'close' }
       request_payload do
-        File.read('spec/support/files/request_payload_gitlab_pull_request_closed.json')
+        File.read('spec/fixtures/files/request_payload_gitlab_pull_request_closed.json')
       end
     end
 
     trait :pull_request_merged do
       hook_action { 'merge' }
       request_payload do
-        File.read('spec/support/files/request_payload_gitlab_pull_request_merged.json')
+        File.read('spec/fixtures/files/request_payload_gitlab_pull_request_merged.json')
       end
     end
 
@@ -160,7 +203,7 @@ FactoryBot.define do
         END_OF_HEADERS
       end
       request_payload do
-        File.read('spec/support/files/request_payload_gitlab_push.json')
+        File.read('spec/fixtures/files/request_payload_gitlab_push.json')
       end
     end
 
@@ -175,7 +218,7 @@ FactoryBot.define do
         END_OF_HEADERS
       end
       request_payload do
-        File.read('spec/support/files/request_payload_gitlab_tag_push.json')
+        File.read('spec/fixtures/files/request_payload_gitlab_tag_push.json')
       end
     end
   end

@@ -1,6 +1,6 @@
 require 'browser_helper'
 
-RSpec.describe 'Attributes', js: true do
+RSpec.describe 'Attributes', :js do
   let!(:user) { create(:confirmed_user, :with_home) }
   let(:attribute) { create(:attrib, project: user.home_project) }
   # AttribTypes are part of the seeds, so we can reuse them
@@ -20,7 +20,7 @@ RSpec.describe 'Attributes', js: true do
       expect(attrib.values.pluck(:value)).to eq(["test\n2nd line", 'test 1'])
 
       visit index_attribs_path(project: user.home_project_name)
-      attribute_type_value = page.all('#attributes tr td', exact_text: attribute_type.fullname)[0].sibling('td', match: :first).text
+      attribute_type_value = page.first('#attributes tr td', exact_text: attribute_type.fullname).sibling('td', match: :first).text
       expect(attribute_type_value).to eq("test\n2nd line\ntest 1")
     end
 
@@ -62,7 +62,7 @@ RSpec.describe 'Attributes', js: true do
           login other_user
 
           visit index_attribs_path(project: user.home_project_name)
-          expect(page).not_to have_content('Add Attribute')
+          expect(page).to have_no_content('Add Attribute')
         end
       end
 
@@ -98,7 +98,7 @@ RSpec.describe 'Attributes', js: true do
         expect(page).to have_content('Attribute was successfully updated.')
 
         visit index_attribs_path(project: user.home_project_name, package: package.name)
-        attribute_type_value = page.all('#attributes tr td', exact_text: attribute_type.fullname)[0].sibling('td', match: :first).text
+        attribute_type_value = page.first('#attributes tr td', exact_text: attribute_type.fullname).sibling('td', match: :first).text
         expect(attribute_type_value).to eq("test\n2nd line\ntest 1")
       end
     end

@@ -1,5 +1,3 @@
-require 'rails_helper'
-
 RSpec.describe Badge do
   let(:user) { create(:confirmed_user, :with_home, login: 'tom') }
   let(:source_project) { user.home_project }
@@ -8,7 +6,7 @@ RSpec.describe Badge do
     stub_request(:get, "#{CONFIG['source_url']}/build/#{user.home_project}/_result?locallink=1&multibuild=1&lastbuild=1" \
                        "&package=#{source_package}&view=status").and_return(body: body)
   end
-  let(:results) { request && source_package.buildresult(source_project, false, true).results[source_package.name] }
+  let(:results) { request && source_package.buildresult(source_project, show_all: false, lastbuild: true).results[source_package.name] }
   let(:badge) { Badge.new(type, results) }
 
   describe '#new' do
@@ -100,7 +98,7 @@ RSpec.describe Badge do
       let(:expected_failure) { 'failed' }
       let(:type) { '' }
 
-      include_examples 'tests for badge xml'
+      it_behaves_like 'tests for badge xml'
     end
 
     context 'with percent type specified' do
@@ -108,7 +106,7 @@ RSpec.describe Badge do
       let(:expected_failure) { '50%' }
       let(:type) { 'percent' }
 
-      include_examples 'tests for badge xml'
+      it_behaves_like 'tests for badge xml'
     end
   end
 end

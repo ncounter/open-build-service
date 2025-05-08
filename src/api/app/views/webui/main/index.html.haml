@@ -8,9 +8,7 @@
       .card-body
         %h2
           Welcome to #{@configuration['title']}
-        -# rubocop:disable Rails/OutputSafety
-        = raw @configuration['description']
-        -# rubocop:enable Rails/OutputSafety
+        = sanitize @configuration['description']
     = render(partial: 'system_status', locals: { busy: @busy,
                                                  building_workers: @building_workers,
                                                  overall_workers: @overall_workers,
@@ -22,7 +20,7 @@
       .card.mb-3
         %h5.card-header New here? Sign up!
         .card-body
-          = render SignUpComponent.new
+          = render 'webui/users/sign_up'
     - if @status_messages.present? || User.admin_session?
       = render partial: 'status_messages', locals: { status_messages: @status_messages }
     = render(partial: 'latest_updates', locals: { latest_updates: @latest_updates }) if @latest_updates && (Configuration.anonymous || User.session)

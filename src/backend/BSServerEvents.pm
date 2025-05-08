@@ -45,7 +45,7 @@ sub request_done {
 sub request_note {
   my ($ev, $msg) = @_;
   my $info = $ev->{'request'} ? BSServer::request_infostr($ev->{'request'}) : $ev->{'peer'};
-  print "$msg for $info\n";
+  print "$msg for $info";
 }
 
 sub replstream_timeout {
@@ -76,7 +76,7 @@ sub replrequest_write {
       BSEvents::add($ev);
       return;
     }
-    print "write error for $ev->{'peer'}: $!\n";
+    print "write error for $ev->{'peer'} writing $l bytes: $! [id=$ev->{'id'}]\n";
     $ev->{'closehandler'}->($ev) if $ev->{'closehandler'};
     close($ev->{'fd'});
     close($ev->{'nfd'}) if $ev->{'nfd'};
@@ -275,7 +275,7 @@ sub reply_cpio {
 
 sub getrequest_timeout {
   my ($ev) = @_;
-  print "getrequest timeout for $ev->{'peer'}\n";
+  print "getrequest timeout for $ev->{'peer'} [id=$ev->{'id'}]\n";
   $ev->{'closehandler'}->($ev) if $ev->{'closehandler'};
   close($ev->{'fd'});
   close($ev->{'nfd'}) if $ev->{'nfd'};
@@ -313,7 +313,7 @@ sub getrequest {
         BSEvents::add($ev);
         return;
       }
-      print "read error for $peer: $!\n";
+      print "read error for $peer: $! [id=$ev->{'id'}]\n";
       $ev->{'closehandler'}->($ev) if $ev->{'closehandler'};
       close($ev->{'fd'});
       close($ev->{'nfd'}) if $ev->{'nfd'};
@@ -321,7 +321,7 @@ sub getrequest {
       return;
     }
     if (!$r) {
-      print "EOF for $peer\n";
+      print "EOF for $peer [id=$ev->{'id'}]\n";
       $ev->{'closehandler'}->($ev) if $ev->{'closehandler'};
       close($ev->{'fd'});
       close($ev->{'nfd'}) if $ev->{'nfd'};
@@ -385,6 +385,7 @@ sub newconnect {
   $request->{'peerip'} = $peerip if $peerip;
   $request->{'peerport'} = $peerport if $peerport;
   my $nev = BSEvents::new('read', \&getrequest);
+  $request->{'reqid'} = $nev->{'id'};
   $nev->{'request'} = $request;
   $nev->{'fd'} = $newfd;
   $nev->{'peer'} = $request->{'peer'};
@@ -407,7 +408,7 @@ sub cloneconnect {
   my $nev = BSEvents::new('read', $ev->{'handler'});
   $nev->{'fd'} = $ev->{'nfd'};
   delete $ev->{'nfd'};
-  my $nreq = { %{$ev->{'request'} || {}} };
+  my $nreq = { %{$ev->{'request'} || {}}, 'reqid' => $nev->{'id'} };
   $nev->{'conf'} = $conf;
   $nev->{'request'} = $nreq;
   $nev->{'requestevents'} = $ev->{'requestevents'};
@@ -454,8 +455,10 @@ sub background {
 
 sub stream_close {
   my ($ev, $wev, $err, $werr) = @_;
+  my $idstr = (($ev || {})->{'id'} || '').'/'.(($wev || {})->{'id'} || '');
+  $idstr = $idstr ? " [id=$idstr]" : '';
   if ($ev) {
-    print "$err\n" if $err;
+    print "$err$idstr\n" if $err;
     BSEvents::rem($ev) if $ev->{'fd'} && !$ev->{'paused'};
     $ev->{'closehandler'}->($ev, $err) if $ev->{'closehandler'};
     close $ev->{'fd'} if $ev->{'fd'};
@@ -463,7 +466,7 @@ sub stream_close {
     delete $ev->{'writeev'};
   }
   if ($wev) {
-    print "$werr\n" if $werr;
+    print "$werr$idstr\n" if $werr;
     BSEvents::rem($wev) if $wev->{'fd'} && !$wev->{'paused'};
     $wev->{'closehandler'}->($wev, $werr) if $wev->{'closehandler'};
     close $wev->{'fd'} if $wev->{'fd'};
@@ -497,10 +500,10 @@ sub stream_read_handler {
     }
     if (!defined($r)) {
       if ($! == POSIX::EINTR || $! == POSIX::EWOULDBLOCK) {
-        BSEvents::add($ev);
+        BSEvents::add($ev) unless $ev->{'paused'};
         return;
       }
-      print "stream_read_handler: $!\n";
+      print "stream_read_handler: $! [id=$ev->{'id'}]\n";
       # can't do much here, fallthrough in EOF code
     } elsif (defined($ev->{'maxbytes'})) {
       $ev->{'maxbytes'} -= $r;
@@ -508,7 +511,7 @@ sub stream_read_handler {
     }
   }
   if (!$r) {
-#    print "stream_read_handler: EOF\n";
+#    print "stream_read_handler: EOF [id=$ev->{'id'}]\n";
     # filegrows case: just return. we need to continue with some other trigger
     if (defined($r) && $ev->{'filegrows'} && $ev->{'type'} eq 'always' && (!defined($ev->{'maxbytes'}) || $ev->{'maxbytes'} > 0)) {
       return;
@@ -521,9 +524,8 @@ sub stream_read_handler {
         if ($ev->{'makechunks'}) {
 	  # keep those chunks small, otherwise our receiver will choke
           while (length($data) > 4096) {
-	    my $d = substr($data, 0, 4096);
-            $wev->{'replbuf'} .= sprintf("%X\r\n", length($d)).$d."\r\n";
-	    $data = substr($data, 4096);
+	    my $d = substr($data, 0, 4096, '');
+	    $wev->{'replbuf'} .= sprintf("%X\r\n", length($d)).$d."\r\n";
           }
           $wev->{'replbuf'} .= sprintf("%X\r\n", length($data)).$data."\r\n";
 	} else {
@@ -580,10 +582,10 @@ sub stream_write_handler {
   my $r = syswrite($ev->{'fd'}, $ev->{'replbuf'}, $l);
   if (!defined($r)) {
     if ($! == POSIX::EINTR || $! == POSIX::EWOULDBLOCK) {
-      BSEvents::add($ev);
+      BSEvents::add($ev) unless $ev->{'paused'};
       return;
     }
-    print "stream_write_handler: $!\n";
+    print "stream_write_handler: writing $l bytes: $! [id=$ev->{'id'}]\n";
     $ev->{'paused'} = 1;
     # support multiple writers ($ev will be a $jev in that case)
     if ($rev->{'writeev'} != $ev) {
@@ -600,14 +602,12 @@ sub stream_write_handler {
   if ($rev->{'paused'} && length($ev->{'replbuf'}) <= 8192) {
     delete $rev->{'paused'};
     BSEvents::add($rev);
-    if ($rev->{'writeev'} != $ev) {
-      my $wev = $rev->{'writeev'};
-      if ($wev->{'paused'} && length($wev->{'replbuf'})) {
-	#print "pushing old data\n";
-	delete $wev->{'paused'};
-	my $conf = $ev->{'conf'};
-	BSEvents::add($wev, $conf->{'replstream_timeout'});
-      }
+    my $wev = $rev->{'writeev'};
+    if ($wev != $ev && $wev->{'paused'} && length($wev->{'replbuf'})) {
+      #print "pushing old data\n";
+      delete $wev->{'paused'};
+      my $conf = $ev->{'conf'};
+      BSEvents::add($wev, $conf->{'replstream_timeout'});
     }
   }
   if (length($ev->{'replbuf'})) {
@@ -657,9 +657,9 @@ sub concheck_handler {
       next if $r;
       if (!defined($r)) {
 	next if $! == POSIX::EINTR || $! == POSIX::EWOULDBLOCK;
-	print "concheck: read error for $ev->{'peer'}: $!\n";
+	print "concheck: read error for $ev->{'peer'}: $! [id=$ev->{'id'}]\n";
       } else {
-	print "concheck: EOF for $ev->{'peer'}\n";
+	print "concheck: EOF for $ev->{'peer'} [id=$ev->{'id'}]\n";
       }
       $ev->{'closehandler'}->($ev) if $ev->{'closehandler'};
       close($ev->{'fd'});

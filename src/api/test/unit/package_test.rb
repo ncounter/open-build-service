@@ -56,7 +56,7 @@ class PackageTest < ActiveSupport::TestCase
     )
 
     position = 1
-    ['build', 'publish', 'debuginfo'].each do |flagtype|
+    %w[build publish debuginfo].each do |flagtype|
       position = @package.update_flags(axml, flagtype, position)
     end
 
@@ -132,7 +132,7 @@ class PackageTest < ActiveSupport::TestCase
                                  "<package name='TestPack' project='home:Iggy'>
                                    <title>My Test package</title>
                                    <description></description>
-                                   <devel project='Notexistant'/>
+                                   <devel project='Notexistent'/>
                                  </package>"
                                ))
     end
@@ -303,7 +303,7 @@ class PackageTest < ActiveSupport::TestCase
       travel(90_000.seconds)
       newyear.title = 'Just a silly update 8'
       newyear.save
-      assert_in_delta(72.7, newyear.activity, 0.2)
+      assert_in_delta(73.5, newyear.activity, 0.2)
     end
   end
 
@@ -313,9 +313,9 @@ class PackageTest < ActiveSupport::TestCase
 
   test 'default scope does not include forbidden projects' do
     # assert that unscoped the forbidden projects are included
-    assert Package.unscoped.all.where(project_id: Relationship.forbidden_project_ids).any?
+    assert Package.unscoped.where(project_id: Relationship.forbidden_project_ids).any?
 
     # assert that with default scope the forbidden projects are not included
-    assert_not Package.all.where(project_id: Relationship.forbidden_project_ids).any?
+    assert_not Package.where(project_id: Relationship.forbidden_project_ids).any?
   end
 end

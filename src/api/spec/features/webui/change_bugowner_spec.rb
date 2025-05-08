@@ -1,6 +1,6 @@
 require 'browser_helper'
 
-RSpec.describe 'ChangeBugowner', js: true do
+RSpec.describe 'ChangeBugowner', :js do
   let!(:bugowner) { create(:confirmed_user, :with_home, login: 'Iggy') }
   let!(:package) { create(:package, name: 'TestPack', project: project) }
   let(:project) { Project.find_by(name: 'home:Iggy') }
@@ -22,7 +22,7 @@ RSpec.describe 'ChangeBugowner', js: true do
 
     visit search_owner_path
     fill_in :search_input, with: package.name
-    click_button 'Search'
+    find('input', id: 'search_input').sibling('button[type=submit]').click
     click_link 'Request bugowner change'
   end
 
@@ -37,7 +37,7 @@ RSpec.describe 'ChangeBugowner', js: true do
 
   context 'with a group as new bugowner' do
     it 'the bugowner is changed by a group' do
-      find(:id, 'review_type').select('Group')
+      find_by_id('review_type').select('Group')
       fill_in :group, with: 'Heroes'
       fill_in :description, with: 'Replace current bugowner by group Heroes'
       click_button 'Submit'
@@ -47,14 +47,14 @@ RSpec.describe 'ChangeBugowner', js: true do
 
   context 'forcing to add both user and group as bugowner' do
     it 'only the visible one before submitting is added' do
-      find(:id, 'review_type').select('Group')
+      find_by_id('review_type').select('Group')
       fill_in :group, with: 'Heroes'
-      find(:id, 'review_type').select('User')
+      find_by_id('review_type').select('User')
       fill_in :user, with: 'Milo'
       fill_in :description, with: 'Replace current bugowner by something else'
       click_button 'Submit'
       expect(page).to have_text("#{bugowner.name} (#{bugowner.login}) wants the user #{new_bugowner.name} (#{new_bugowner.login}) to become bugowner (previous bugowners will be deleted)")
-      expect(page).not_to have_text('Heroes')
+      expect(page).to have_no_text('Heroes')
     end
   end
 end

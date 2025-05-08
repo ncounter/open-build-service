@@ -1,5 +1,7 @@
 module Event
   class StatusCheckForRequest < StatusCheck
+    include EventObjectRequest
+
     self.message_bus_routing_key = 'request.status_report'
     payload_keys :number
   end
@@ -12,7 +14,7 @@ end
 #  id          :bigint           not null, primary key
 #  eventtype   :string(255)      not null, indexed
 #  mails_sent  :boolean          default(FALSE), indexed
-#  payload     :text(65535)
+#  payload     :text(16777215)
 #  undone_jobs :integer          default(0)
 #  created_at  :datetime         indexed
 #  updated_at  :datetime

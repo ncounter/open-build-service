@@ -1,11 +1,10 @@
 class Staging::StagingProjectsController < Staging::StagingController
   include Staging::Errors
 
-  before_action :require_login, except: [:index, :show]
   before_action :set_project
   before_action :set_staging_workflow, only: :create
-  before_action :set_options, only: [:index, :show]
-  before_action :set_staging_project, only: [:show, :accept]
+  before_action :set_options, only: %i[index show]
+  before_action :set_staging_project, only: %i[show accept]
 
   validate_action create: { method: :post, request: :staging_project }
 
@@ -26,7 +25,7 @@ class Staging::StagingProjectsController < Staging::StagingController
 
   def create
     authorize @staging_workflow, policy_class: Staging::StagedRequestPolicy
-    result = ::Staging::StagingProjectCreator.new(request.body.read, @staging_workflow, User.session!).call
+    result = ::Staging::StagingProjectCreator.new(request.body.read, @staging_workflow, User.session).call
 
     if result.valid?
       render_ok
@@ -42,7 +41,7 @@ class Staging::StagingProjectsController < Staging::StagingController
   def copy
     authorize @project.staging
 
-    StagingProjectCopyJob.perform_later(params[:staging_workflow_project], params[:staging_project_name], params[:staging_project_copy_name], User.session!.id)
+    StagingProjectCopyJob.perform_later(params[:staging_workflow_project], params[:staging_project_name], params[:staging_project_copy_name], User.session.id)
     render_ok
   end
 
@@ -50,7 +49,7 @@ class Staging::StagingProjectsController < Staging::StagingController
     authorize @staging_project, :accept?
 
     if acceptable?(force: params[:force].present?)
-      StagingProjectAcceptJob.perform_later(project_id: @staging_project.id, user_login: User.session!.login)
+      StagingProjectAcceptJob.perform_later(project_id: @staging_project.id, user_login: User.session.login)
       render_ok
     else
       render_error(
@@ -67,9 +66,7 @@ class Staging::StagingProjectsController < Staging::StagingController
     @acceptable_error = 'has reviews open' unless @staging_project.missing_reviews.empty?
 
     if force
-      unless @staging_project.overall_state.in?(StagingProject::FORCEABLE_STATES)
-        @acceptable_error = "is not in state #{StagingProject::FORCEABLE_STATES.to_sentence(last_word_connector: ' or ')}"
-      end
+      @acceptable_error = "is not in state #{StagingProject::FORCEABLE_STATES.to_sentence(last_word_connector: ' or ')}" unless @staging_project.overall_state.in?(StagingProject::FORCEABLE_STATES)
     else
       @acceptable_error = "#{@staging_project.overall_state} is not an acceptable state" unless @staging_project.overall_state == :acceptable
     end
@@ -78,7 +75,7 @@ class Staging::StagingProjectsController < Staging::StagingController
 
   def set_options
     @options = {}
-    [:requests, :history, :status].each do |option|
+    %i[requests history status].each do |option|
       @options[option] = params[option].present?
     end
   end

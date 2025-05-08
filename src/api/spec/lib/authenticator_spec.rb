@@ -1,4 +1,3 @@
-require 'rails_helper'
 require 'gssapi'
 
 RSpec.describe Authenticator do
@@ -17,7 +16,7 @@ RSpec.describe Authenticator do
 
     context 'in proxy mode' do
       before do
-        stub_const('CONFIG', CONFIG.merge('proxy_auth_mode' => :on))
+        allow(Configuration).to receive(:proxy_auth_mode_enabled?).and_return(true)
       end
 
       it_behaves_like 'a confirmed user logs in' do
@@ -36,22 +35,11 @@ RSpec.describe Authenticator do
         end
 
         context 'and the user is not registered to OBS' do
-          let(:request_mock) { double(:request, env: { 'HTTP_X_USERNAME' => 'new_user' }) }
-
           subject { Authenticator.new(request_mock, session_mock, response_mock) }
 
+          let(:request_mock) { double(:request, env: { 'HTTP_X_USERNAME' => 'new_user' }) }
+
           it { expect { subject.extract_user }.to raise_error(Authenticator::AuthenticationRequiredError, "User 'new_user' does not exist") }
-        end
-      end
-    end
-
-    context 'in ldap mode' do
-      it_behaves_like 'a confirmed user logs in' do
-        let(:request_mock) { double(:request, env: { 'Authorization' => "Basic #{Base64.encode64("#{user.login}:buildservice")}" }) }
-
-        before do
-          stub_const('CONFIG', CONFIG.merge('ldap_mode' => :on))
-          allow(UserLdapStrategy).to receive(:find_with_ldap).and_return([user.email, user.realname])
         end
       end
     end

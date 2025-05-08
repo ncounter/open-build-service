@@ -1,5 +1,3 @@
-require 'rails_helper'
-
 RSpec.describe BsRequestHistoryElementComponent, type: :component do
   let(:user) { create(:confirmed_user) }
   let(:reviews) { [] }
@@ -11,20 +9,12 @@ RSpec.describe BsRequestHistoryElementComponent, type: :component do
   context 'for any kind of history elements' do
     let(:element) { travel_to(1.day.ago) { create(:history_element_request_accepted, user: user) } }
 
-    it 'displays an avatar' do
-      expect(rendered_content).to have_selector("img[title='#{user.realname}']", count: 1)
-    end
-
     it 'displays the name of the user involved' do
       expect(rendered_content).to have_text("#{user.realname} (#{user.login})")
     end
 
     it 'displays the time in words' do
       expect(rendered_content).to have_text('1 day ago')
-    end
-
-    it 'displays the element comment' do
-      expect(rendered_content).to have_selector('.timeline-item-comment', text: element.comment)
     end
   end
 
@@ -70,6 +60,45 @@ RSpec.describe BsRequestHistoryElementComponent, type: :component do
 
       it 'describes the element action' do
         expect(rendered_content).to have_text('as a reviewer')
+      end
+    end
+
+    context 'with review for group' do
+      let(:element) { create(:history_element_request_review_accepted_with_review_by_group, user: user) }
+
+      it 'displays the right icon' do
+        expect(rendered_content).to have_css('i.fa-check')
+      end
+
+      it 'describes the element action' do
+        expect(rendered_content).to have_text('accepted review')
+        expect(rendered_content).to have_text("for\ngroup")
+      end
+    end
+
+    context 'with review for project' do
+      let(:element) { create(:history_element_request_review_accepted_with_review_by_project, user: user) }
+
+      it 'displays the right icon' do
+        expect(rendered_content).to have_css('i.fa-check')
+      end
+
+      it 'describes the element action' do
+        expect(rendered_content).to have_text('accepted review')
+        expect(rendered_content).to have_text("for\nproject")
+      end
+    end
+
+    context 'with review for package' do
+      let(:element) { create(:history_element_request_review_accepted_with_review_by_package, user: user) }
+
+      it 'displays the right icon' do
+        expect(rendered_content).to have_css('i.fa-check')
+      end
+
+      it 'describes the element action' do
+        expect(rendered_content).to have_text('accepted review')
+        expect(rendered_content).to have_text("for\npackage")
       end
     end
 

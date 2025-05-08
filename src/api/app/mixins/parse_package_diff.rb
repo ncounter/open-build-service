@@ -3,10 +3,14 @@ module ParsePackageDiff
     ret = {}
     sourcediff.get('issues').elements('issue') do |issue|
       next unless issue['name']
-      next if issue['state'] == 'deleted'
 
       i = Issue.find_by_name_and_tracker(issue['name'], issue['tracker'], nonfatal: 1)
-      ret[issue['label']] = i.webui_infos if i
+      next unless i
+
+      issue_infos = i.webui_infos
+      issue_infos[:state] = issue['state'] if issue['state']
+
+      ret[issue['label']] = issue_infos
     end
     ret
   end
@@ -26,9 +30,12 @@ module ParsePackageDiff
                  else # in case of deleted files
                    file['old']['name']
                  end
+      files_hash[filename] = file
       if filename.include?('/')
         other_file_keys << filename
-      elsif filename.ends_with?('.spec')
+        next
+      end
+      if filename.ends_with?('.spec')
         spec_file_keys << filename
       elsif filename.ends_with?('.changes')
         changes_file_keys << filename
@@ -37,7 +44,6 @@ module ParsePackageDiff
       else
         other_file_keys << filename
       end
-      files_hash[filename] = file
     end
 
     {
@@ -52,12 +58,9 @@ module ParsePackageDiff
   def sorted_filenames_from_sourcediff(sd)
     return [{}] if sd.blank?
 
-    parsed_sourcediff = []
-
-    sd = '<diffs>' + sd + '</diffs>'
-    Xmlhash.parse(sd).elements('sourcediff').each do |sourcediff|
-      parsed_sourcediff << parse_one_diff(sourcediff)
+    sd = "<diffs>#{sd}</diffs>"
+    Xmlhash.parse(sd).elements('sourcediff').map do |sourcediff|
+      parse_one_diff(sourcediff)
     end
-    parsed_sourcediff
   end
 end

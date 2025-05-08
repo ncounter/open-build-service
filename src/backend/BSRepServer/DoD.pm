@@ -18,6 +18,7 @@ package BSRepServer::DoD;
 
 use Digest::SHA ();
 
+use BSOBS;
 use BSWatcher ':https';
 use BSVerify;
 use BSHandoff;
@@ -34,15 +35,42 @@ $proxy = $BSConfig::proxy if defined($BSConfig::proxy);
 
 my $maxredirects = 10;
 
-my @binsufs = qw{rpm deb pkg.tar.gz pkg.tar.xz pkg.tar.zst};
+my @binsufs = @BSOBS::binsufs;
 my $binsufsre = join('|', map {"\Q$_\E"} @binsufs);
+
+sub remove_dot_segments {
+  my ($url) = @_;
+  return $url unless $url =~ /^([^:\/]+:\/\/[^\/]+\/)(.*$)/;
+  my ($intro, $path) = ($1, $2);
+  my $trail= '';
+  $trail = $1 if $path =~ s/([#\?].*$)//;
+  my @p;
+  for (split('/', $path)) {
+    next if $_ eq '.' || $_ eq '';
+    pop @p if $_ eq '..';
+    push @p, $_ if $_ ne '..';
+  }
+  $path = join('/', @p);
+  return "$intro$path$trail";
+}
 
 sub is_wanted_dodbinary {
   my ($pool, $p, $path, $doverify) = @_;
-  my $q;
-  eval { $q = Build::query($path, 'evra' => 1) };
+  my @opts = ('evra' => 1);
+  if ($doverify && $path =~ /\.apk$/) {
+    push @opts, 'verifyapkdatasection' => 1;
+    my $hdrid = defined(&BSSolv::pool::pkg2hdrid) ? $pool->pkg2hdrid($p) : undef;
+    if ($hdrid) {
+      $hdrid =~ s/^sha1:/X1/;
+      $hdrid =~ s/^sha256:/X2/;
+      push @opts, 'verifyapkchksum' => $hdrid;
+    }
+  }
+  my $q = eval { Build::query($path, @opts) };
+  warn("binary query of $path: $@") if $@;
   return 0 unless $q;
   my $data = $pool->pkg2data($p);
+  $data->{'arch'} = $q->{'arch'} if $path =~ /\.apk$/;	# apk metadata has wrong arch
   $data->{'release'} = '__undef__' unless defined $data->{'release'};
   $q->{'release'} = '__undef__' unless defined $q->{'release'};
   return 0 if $data->{'name'} ne $q->{'name'} ||
@@ -78,7 +106,7 @@ sub fetchdodcontainer {
     return "$dir/$pkgname.tar" if is_wanted_dodcontainer($pool, $p, "$dir/$pkgname");
   }
   # we really need to download, handoff to ajax if not already done
-  BSHandoff::handoff(@$handoff) if $handoff && !$BSStdServer::isajax;
+  BSHandoff::handoff_part('dod', @$handoff) if $handoff && !$BSStdServer::isajax;
 
   # download all missing blobs
   my $path = $pool->pkg2path($p);
@@ -114,11 +142,13 @@ sub fetchdodbinary {
     return $localname if is_wanted_dodbinary($pool, $p, $localname);
   }
   # we really need to download, handoff to ajax if not already done
-  BSHandoff::handoff(@$handoff) if $handoff && !$BSStdServer::isajax;
+  BSHandoff::handoff_part('dod', @$handoff) if $handoff && !$BSStdServer::isajax;
   my $url = $repo->dodurl();
   $url .= '/' unless $url =~ /\/$/;
   $url .= $pool->pkg2path($p);
   my $tmp = "$gdst/:full/.dod.$$.$pkgname";
+  # fix url
+  $url = remove_dot_segments $url;
   #print "fetching: $url\n";
   my $param = {'uri' => $url, 'filename' => $tmp, 'receiver' => \&BSHTTP::file_receiver, 'proxy' => $proxy};
   $param->{'maxredirects'} = $maxredirects if defined $maxredirects;

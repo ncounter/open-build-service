@@ -1,6 +1,8 @@
 get:
   summary: List all the projects.
   description: Get the list of all projects.
+  security:
+    - basic_authentication: []
   parameters:
     - name: deleted
       in: query
@@ -39,8 +41,7 @@ get:
     '401':
       $ref: '../components/responses/unauthorized.yaml'
     '403':
-      description: |
-        No permission to access deleted projects.
+      description: No permission to access deleted projects.
       content:
         application/xml; charset=utf-8:
           schema:

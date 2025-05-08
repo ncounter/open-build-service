@@ -2,29 +2,35 @@ class Webui::ProjectController < Webui::WebuiController
   include Webui::RequestHelper
   include Webui::ProjectHelper
   include Webui::ManageRelationships
+  include Webui::NotificationsHandler
+  include Webui::ProjectBuildResultParsing
 
-  before_action :lockout_spiders, only: [:requests, :buildresults]
+  before_action :lockout_spiders, only: %i[requests buildresults]
 
-  before_action :require_login, only: [:create, :destroy, :new, :release_request,
-                                       :new_release_request, :edit_comment]
+  before_action :require_login, only: %i[create destroy new release_request
+                                         new_release_request edit_comment]
 
-  before_action :set_project, only: [:autocomplete_repositories, :users, :subprojects,
-                                     :edit, :release_request,
-                                     :show, :buildresult,
-                                     :destroy, :remove_path_from_target,
-                                     :requests, :save, :monitor, :edit_comment,
-                                     :unlock, :save_person, :save_group, :remove_role,
-                                     :move_path, :clear_failed_comment, :pulse]
+  # rubocop:disable Rails/LexicallyScopedActionFilter
+  # The methods save_person, save_group and remove_role are defined in Webui::ManageRelationships
+  before_action :set_project, only: %i[autocomplete_repositories users subprojects
+                                       edit release_request
+                                       show buildresult
+                                       destroy remove_path_from_target
+                                       requests save monitor edit_comment
+                                       unlock save_person save_group remove_role
+                                       move_path clear_failed_comment pulse]
+  # rubocop:enable Rails/LexicallyScopedActionFilter
   before_action :set_project_by_id, only: :update
 
   before_action :load_project_info, only: :show
 
-  before_action :check_ajax, only: [:buildresult, :edit_comment_form]
+  before_action :check_ajax, only: %i[buildresult edit_comment_form]
 
-  after_action :verify_authorized, except: [:index, :autocomplete_projects, :autocomplete_incidents, :autocomplete_packages,
-                                            :autocomplete_repositories, :users, :subprojects, :new, :show,
-                                            :buildresult, :requests, :monitor, :new_release_request,
-                                            :remove_target_request, :edit_comment, :edit_comment_form]
+  after_action :verify_authorized, except: %i[index autocomplete_projects autocomplete_staging_projects
+                                              autocomplete_incidents autocomplete_packages
+                                              autocomplete_repositories users subprojects new show
+                                              buildresult requests monitor new_release_request
+                                              remove_target_request edit_comment edit_comment_form preview_description]
 
   def index
     respond_to do |format|
@@ -37,17 +43,11 @@ class Webui::ProjectController < Webui::WebuiController
   end
 
   def show
-    @bugowners_mail = @project.bugowner_emails
     @release_targets = @project.release_targets
 
-    @has_patchinfo = @project.patchinfos.exists?
     @comments = @project.comments
     @comment = Comment.new
-
-    if User.session && params[:notification_id]
-      @current_notification = Notification.find(params[:notification_id])
-      authorize @current_notification, :update?, policy_class: NotificationPolicy
-    end
+    @current_notification = handle_notification
 
     respond_to do |format|
       format.html
@@ -81,7 +81,7 @@ class Webui::ProjectController < Webui::WebuiController
       return
     end
 
-    @project.relationships.build(user: User.session!,
+    @project.relationships.build(user: User.session,
                                  role: Role.find_by_title('maintainer'))
 
     @project.kind = 'maintenance' if params[:maintenance_project]
@@ -100,25 +100,20 @@ class Webui::ProjectController < Webui::WebuiController
       redirect_to action: 'show', project: @project.name
     else
       flash[:error] = "Failed to save project '#{elide(@project.name)}'. #{@project.errors.full_messages.to_sentence}."
-      redirect_back(fallback_location: root_path)
+      redirect_back_or_to root_path
     end
   end
 
   def update
     authorize @project, :update?
     respond_to do |format|
-      if @project.update(project_params)
-        format.html do
-          flash[:success] = 'Project was successfully updated.'
-          redirect_to project_show_path(@project)
+      format.js do
+        if @project.update(project_params)
+          @project.store
+          flash.now[:success] = 'Project was successfully updated.'
+        else
+          flash.now[:error] = 'Failed to update the project.'
         end
-        format.js { flash.now[:success] = 'Project was successfully updated.' }
-      else
-        format.html do
-          flash[:error] = 'Failed to update project'
-          redirect_to project_show_path(@project)
-        end
-        format.js
       end
     end
   end
@@ -141,6 +136,10 @@ class Webui::ProjectController < Webui::WebuiController
 
   def autocomplete_projects
     render json: Project.autocomplete(params[:term], params[:local]).not_maintenance_incident.pluck(:name)
+  end
+
+  def autocomplete_staging_projects
+    render json: Project.autocomplete(params[:term]).where.not(staging_workflow_id: nil).pluck(:name)
   end
 
   def autocomplete_incidents
@@ -166,7 +165,7 @@ class Webui::ProjectController < Webui::WebuiController
     @roles = Role.local_roles
     if User.session && params[:notification_id]
       @current_notification = Notification.find(params[:notification_id])
-      authorize @current_notification, :update?, policy_class: NotificationPolicy
+      authorize @current_notification, :update?, policy_class: NotificationCommentPolicy
     end
     @current_request_action = BsRequestAction.find(params[:request_action_id]) if User.session && params[:request_action_id]
   end
@@ -212,10 +211,10 @@ class Webui::ProjectController < Webui::WebuiController
              BsRequestAction::Errors::UnknownTargetProject,
              BsRequestAction::UnknownTargetPackage => e
         flash[:error] = e.message
-        redirect_back(fallback_location: { action: 'show', project: params[:project] }) && return
+        redirect_back_or_to({ action: 'show', project: params[:project] }) && return
       rescue APIError
         flash[:error] = 'Internal problem while release request creation'
-        redirect_back(fallback_location: { action: 'show', project: params[:project] }) && return
+        redirect_back_or_to({ action: 'show', project: params[:project] }) && return
       end
     end
     redirect_to action: 'show', project: params[:project]
@@ -227,7 +226,10 @@ class Webui::ProjectController < Webui::WebuiController
                                              collapsed_repositories: params.fetch(:collapsedRepositories, {}) }
   end
 
+  # TODO: Remove this once request_index beta is rolled out
   def requests
+    redirect_to(projects_requests_path(@project)) if Flipper.enabled?(:request_index, User.session)
+
     @default_request_type = params[:type] if params[:type]
     @default_request_state = params[:state] if params[:state]
   end
@@ -243,7 +245,7 @@ class Webui::ProjectController < Webui::WebuiController
       redirect_to action: 'show', project: project.name
     else
       flash[:error] = 'Project was never deleted.'
-      redirect_back(fallback_location: root_path)
+      redirect_back_or_to root_path
     end
   end
 
@@ -282,7 +284,7 @@ class Webui::ProjectController < Webui::WebuiController
       @project.store
       redirect_to({ action: :index, controller: :repositories, project: @project }, success: 'Successfully removed path')
     else
-      redirect_back(fallback_location: root_path, error: "Can not remove path: #{@project.errors.full_messages.to_sentence}")
+      redirect_back_or_to root_path, error: "Can not remove path: #{@project.errors.full_messages.to_sentence}"
     end
   end
 
@@ -309,19 +311,21 @@ class Webui::ProjectController < Webui::WebuiController
   end
 
   def monitor
-    unless (buildresult = monitor_buildresult)
+    build_results = monitor_buildresult
+
+    if build_results
+      # This method sets a bunch of instance variables used in the view and below...
+      monitor_parse_buildresult(build_results)
+
+      # extract repos
+      repohash = {}
+      @statushash.each do |repo, arch_hash|
+        repohash[repo] = arch_hash.keys.sort!
+      end
+      @repoarray = repohash.sort
+    else
       @buildresult_unavailable = true
-      return
     end
-
-    monitor_parse_buildresult(buildresult)
-
-    # extract repos
-    repohash = {}
-    @statushash.each do |repo, arch_hash|
-      repohash[repo] = arch_hash.keys.sort!
-    end
-    @repoarray = repohash.sort
   end
 
   def clear_failed_comment
@@ -346,7 +350,7 @@ class Webui::ProjectController < Webui::WebuiController
     @package = @project.find_package(params[:package])
 
     at = AttribType.find_by_namespace_and_name!('OBS', 'ProjectStatusPackageFailComment')
-    unless User.session!.can_create_attribute_in?(@package, at)
+    unless User.session.can_create_attribute_in?(@package, at)
       @comment = params[:last_comment]
       flash.now[:error] = "Can't create attributes in #{elide(@package.name)}"
       return
@@ -370,6 +374,18 @@ class Webui::ProjectController < Webui::WebuiController
     end
   end
 
+  def preview_description
+    markdown = helpers.render_as_markdown(params[:project][:description])
+    respond_to do |format|
+      format.json { render json: { markdown: markdown } }
+    end
+  end
+
+  def buildresults; end
+  def save; end
+  def pulse; end
+  def edit_comment_form; end
+
   private
 
   def show_all?
@@ -385,90 +401,6 @@ class Webui::ProjectController < Webui::WebuiController
     when 'parent project'
       @project.ancestors
     end
-  end
-
-  def monitor_buildresult
-    @legend = Buildresult::STATUS_DESCRIPTION
-
-    @name_filter = params[:pkgname]
-    @lastbuild_switch = params[:lastbuild]
-    # FIXME: this code needs some love
-    defaults = if params[:defaults]
-                 (begin
-                   Integer(params[:defaults])
-                 rescue ArgumentError
-                   1
-                 end).positive?
-               else
-                 true
-               end
-    params['expansionerror'] = 1 if params['unresolvable']
-    monitor_set_filter(defaults)
-
-    find_opt = { project: @project, view: 'status', code: @status_filter,
-                 arch: @arch_filter, repository: @repo_filter }
-    find_opt[:lastbuild] = 1 if @lastbuild_switch.present?
-
-    buildresult = Buildresult.find_hashed(find_opt)
-    if buildresult.empty?
-      flash[:warning] = "No build results for project '#{elide(@project.name)}'"
-      redirect_to action: :show, project: params[:project]
-      return
-    end
-
-    return unless buildresult.key?('result')
-
-    buildresult
-  end
-
-  def monitor_parse_buildresult(buildresult)
-    @packagenames = Set.new
-    @statushash = {}
-    @repostatushash = {}
-    @repostatusdetailshash = {}
-    @failures = 0
-
-    buildresult.elements('result') do |result|
-      monitor_parse_result(result)
-    end
-
-    # convert to sorted array
-    @packagenames = @packagenames.to_a.sort!
-  end
-
-  def monitor_parse_result(result)
-    repo = result['repository']
-    arch = result['arch']
-
-    return unless @repo_filter.nil? || @repo_filter.include?(repo)
-    return unless @arch_filter.nil? || @arch_filter.include?(arch)
-
-    # package status cache
-    @statushash[repo] ||= {}
-    stathash = @statushash[repo][arch] = {}
-
-    result.elements('status') do |status|
-      package = status['package']
-      next if @name_filter.present? && !filter_matches?(package, @name_filter)
-
-      stathash[package] = status
-      @packagenames.add(package)
-      @failures += 1 if status['code'].in?(['unresolvable', 'failed', 'broken'])
-    end
-
-    # repository status cache
-    @repostatushash[repo] ||= {}
-    @repostatusdetailshash[repo] ||= {}
-
-    return unless result.key?('state')
-
-    @repostatushash[repo][arch] = if result.key?('dirty')
-                                    'outdated_' + result['state']
-                                  else
-                                    result['state']
-                                  end
-
-    @repostatusdetailshash[repo][arch] = result['details'] if result.key?('details')
   end
 
   def set_project_by_id
@@ -489,7 +421,8 @@ class Webui::ProjectController < Webui::WebuiController
       :access_protection,
       :source_protection,
       :disable_publishing,
-      :url
+      :url,
+      :report_bug_url
     )
   end
 
@@ -509,15 +442,15 @@ class Webui::ProjectController < Webui::WebuiController
 
     reqs = @project.open_requests
     @requests = (reqs[:reviews] + reqs[:targets] + reqs[:incidents] + reqs[:maintenance_release]).sort!.uniq
-    @incoming_requests_size = OpenRequestsFinder.new(BsRequest, @project.name).count_incoming(reqs.values.sum)
-    @outgoing_requests_size = OpenRequestsFinder.new(BsRequest, @project.name).count_outgoing(reqs.values.sum)
+    @incoming_requests_size = OpenRequestsFinder.new(BsRequest, @project.name).incoming_requests(@requests).count
+    @outgoing_requests_size = OpenRequestsFinder.new(BsRequest, @project.name).outgoing_requests(@requests).count
 
     @nr_of_problem_packages = @project.number_of_build_problems
   end
 
   def require_maintenance_project
     unless @is_maintenance_project
-      redirect_back(fallback_location: { action: 'show', project: @project })
+      redirect_back_or_to({ action: 'show', project: @project })
       return false
     end
     true
@@ -531,69 +464,23 @@ class Webui::ProjectController < Webui::WebuiController
       @project_maintenance_project = pm.maintenance_project.name
     end
 
-    @is_maintenance_project = @project.is_maintenance?
+    @is_maintenance_project = @project.maintenance?
     if @is_maintenance_project
       @open_maintenance_incidents = @project.maintenance_incidents.distinct.order('projects.name').pluck('projects.name')
 
       @maintained_projects = @project.maintained_project_names
     end
-    @is_incident_project = @project.is_maintenance_incident?
+    @is_incident_project = @project.maintenance_incident?
     return unless @is_incident_project
 
-    @open_release_requests = BsRequest.find_for(project: @project.name,
-                                                states: ['new', 'review'],
-                                                types: ['maintenance_release'],
-                                                roles: ['source']).pluck(:number)
+    @open_release_requests = BsRequest::FindFor::Query.new(project: @project.name,
+                                                           states: %w[new review],
+                                                           types: ['maintenance_release'],
+                                                           roles: ['source']).all.pluck(:number) # rubocop:disable Rails/RedundantActiveRecordAllMethod
   end
 
   def valid_target_name?(name)
     name =~ /^\w[-.\w&]*$/
-  end
-
-  def monitor_set_filter(defaults)
-    @avail_status_values = Buildresult.avail_status_values
-    @status_filter = []
-    @avail_status_values.each do |s|
-      id = s.delete(' ')
-      if params.key?(id)
-        next if params[id].to_s == '0'
-      else
-        next unless defaults
-      end
-      next if defaults && ['disabled', 'excluded', 'unknown'].include?(s)
-
-      @status_filter << s
-    end
-
-    repos = @project.repositories
-    @avail_repo_values = repos.select(:name).distinct.order(:name).pluck(:name)
-    @avail_arch_values = repos.joins(:architectures).select('architectures.name').distinct.order('architectures.name').pluck('architectures.name')
-
-    @arch_filter = []
-    @avail_arch_values.each do |s|
-      archid = valid_xml_id("arch_#{s}")
-      @arch_filter << s if defaults || params[archid]
-    end
-
-    @repo_filter = []
-    @avail_repo_values.each do |s|
-      repoid = valid_xml_id("repo_#{s}")
-      @repo_filter << s if defaults || params[repoid]
-    end
-  end
-
-  def filter_matches?(input, filter_string)
-    result = false
-    filter_string.gsub!(/\s*/, '')
-    filter_string.split(',').each do |filter|
-      no_invert = filter.match(/(^!?)(.+)/)
-      result = if no_invert[1] == '!'
-                 input.include?(no_invert[2]) ? result : true
-               else
-                 input.include?(no_invert[2]) ? true : result
-               end
-    end
-    result
   end
 
   def set_project_by_name

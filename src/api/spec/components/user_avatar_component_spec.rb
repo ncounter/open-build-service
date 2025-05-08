@@ -1,5 +1,3 @@
-require 'rails_helper'
-
 RSpec.describe UserAvatarComponent, type: :component do
   describe '#avatar_object' do
     let(:user) { create(:user, login: 'King') }
@@ -13,11 +11,11 @@ RSpec.describe UserAvatarComponent, type: :component do
 
         before do
           package.relationships.create(user: other_user, role: maintainer)
-          render_inline(described_class.new(other_user.login))
+          render_inline(described_class.new(other_user))
         end
 
         it 'renders the maintainers of the package' do
-          expect(rendered_content).to have_selector('img[title="Bob"]', count: 1)
+          expect(rendered_content).to have_css('img[title="Bob"]', count: 1)
         end
       end
     end
