@@ -3,7 +3,7 @@
   top: $top-navigation-height;
 }
 
-.notification-toolbar ~ .container-xxl .flash-and-announcement {
+.notification-toolbar ~ .container-fluid .flash-and-announcement {
   top: $top-navigation-height + $notification-toolbar-height + .25rem !important;
   z-index: calc(#{$zindex-fixed} - 5);
 }

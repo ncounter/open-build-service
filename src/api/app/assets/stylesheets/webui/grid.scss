@@ -45,9 +45,10 @@
     }
 
     // This prevents content from breaking the layout by overflowing outside the viewport
-    #content {
+    #content, #breadcrumbs, #alerts, #modal {
       // 2rem is the sum of the left and right padding for the content
       max-width: calc(100vw - (#{$left-navigation-width} + 2rem));
+      margin: auto;
     }
 
     // Adjust content width when sidebar is collapsed

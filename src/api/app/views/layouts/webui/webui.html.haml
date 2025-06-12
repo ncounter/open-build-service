@@ -50,11 +50,12 @@
         - if @current_notification || @current_request_action
           = render partial: 'layouts/webui/notification_toolbar', locals: { notification: @current_notification,
                                                                             request_action: @current_request_action }
-        .container-xxl.flex-grow-1.pb-3.border-bottom
-          .sticky-top.flash-and-announcement.text-break
-            = render partial: 'layouts/webui/status_message_announcement', locals: { current_announcement: @current_announcement }
-            #flash= render partial: 'layouts/webui/flash', object: flash
-          .modal.fade#modal{ tabindex: '-1', role: 'dialog', aria: { labelledby: 'modalLabel', hidden: true } }
+        .container-fluid.flex-grow-1.pb-3.border-bottom
+          .row
+            .sticky-top.flash-and-announcement.text-break.pt-2#alerts
+              = render partial: 'layouts/webui/status_message_announcement', locals: { current_announcement: @current_announcement }
+              #flash= render partial: 'layouts/webui/flash', object: flash
+            .modal.fade#modal{ tabindex: '-1', role: 'dialog', aria: { labelledby: 'modalLabel', hidden: true } }
 
           .row.flex-column
             .col#breadcrumbs
