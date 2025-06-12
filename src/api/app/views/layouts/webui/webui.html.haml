@@ -50,7 +50,7 @@
         - if @current_notification || @current_request_action
           = render partial: 'layouts/webui/notification_toolbar', locals: { notification: @current_notification,
                                                                             request_action: @current_request_action }
-        .container-fluid.flex-grow-1.pb-3.border-bottom
+        .container-fluid.flex-grow-1.pb-3.border-bottom{ class: "#{'expanded' if sidebar_collapsed?}" }
           .row
             .sticky-top.flash-and-announcement.text-break.pt-2#alerts
               = render partial: 'layouts/webui/status_message_announcement', locals: { current_announcement: @current_announcement }
@@ -60,7 +60,7 @@
           .row.flex-column
             .col#breadcrumbs
               = render partial: 'layouts/webui/breadcrumbs'
-            .col#content{ class: "#{'expanded' if sidebar_collapsed?}" }
+            .col#content
               = yield
 
         .container-fluid.mt-4.mb-2.py-2#footer

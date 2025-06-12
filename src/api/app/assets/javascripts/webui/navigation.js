@@ -33,7 +33,7 @@ function toggleTooltip() {
 function toggleSidebarState() {
     $('#toggle-sidebar-button').find('.fas').toggleClass('fa-angle-double-left fa-angle-double-right');
     $('#left-navigation-area').toggleClass('collapsed');
-    $('#content').toggleClass('expanded');
+    $('#content-area .container-fluid').toggleClass('expanded');
 }
 
 $(function () {
