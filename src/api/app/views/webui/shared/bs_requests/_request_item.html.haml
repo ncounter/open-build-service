@@ -1,48 +1,45 @@
-- bs_request_actions_count = bs_request.bs_request_actions.count
-- bs_request_actions_types = bs_request.bs_request_actions.pluck(:type).uniq
-.list-group-item.list-group-item-action
-  .row.flex-nowrap
-    .col-auto
-      - bs_request_actions_types.each do |action_type|
-        %div{ title: action_type.humanize.titleize }
-          %i{ class: "#{action_type_icon(action_type)}" }
-    .col.col-with-icon
-      .d-flex.mb-1
-        %strong.me-auto
-          = link_to(request_show_path(bs_request.number), id: "request-heading#{bs_request.number}") do
-            - if bs_request_actions_count != 1
-              Multiple Action
-            - if bs_request_actions_types.count == 1
-              = bs_request.bs_request_actions.first.type.humanize.titleize
-            Request ##{bs_request.number}
-        = render BsRequestPriorityBadgeComponent.new(priority: bs_request.priority, css_class: 'mb-auto mx-2')
-        = render BsRequestStateBadgeComponent.new(state: bs_request.state, css_class: 'mb-auto')
-      - if Flipper.enabled?(:labels, User.session) && bs_request.labels
-        .mb-1
-          = render partial: 'webui/shared/label_clickable', collection: bs_request.labels, locals: { form: form }, as: :label
-      .mb-1
-        = render BsRequestSummaryDescriptionComponent.new(bs_request:)
-        .mb-2.request-index-description.text-truncate
-          = bs_request.description
-      .text-end
-        %span
-          - if (creator = User.find_by_login(bs_request.creator))
-            = render AvatarComponent.new(name: bs_request.creator, email: creator.email, custom_css: 'align-text-bottom')
-            = bs_request.creator
-          - else
-            A deleted user
-          created
-          = render TimeComponent.new(time: bs_request.created_at)
-        - unless bs_request_actions_count == 1
+- bs_request_actions = bs_request.bs_request_actions.to_a
+- bs_request_actions_types = bs_request_actions.map(&:type).uniq
+- reviews = bs_request.reviews.to_a
+- comments_count = bs_request.comments.count
+- labels = Flipper.enabled?(:labels, User.session) ? bs_request.labels.to_a : []
+.list-group-item.list-group-item-action.request-index-item.p-3
+  .d-flex.gap-3
+    .request-index-icon.text-center{ title: bs_request_actions_types.map { |type| type.humanize.titleize }.to_sentence }
+      %i{ class: bs_request_actions_types.one? ? action_type_icon(bs_request_actions_types.first) : 'fas fa-layer-group fa-fw' }
+      - if bs_request_actions.many?
+        .small.fw-semibold= bs_request_actions.size
+    .request-index-content.flex-grow-1
+      .d-flex.align-items-start.gap-2
+        = link_to(request_show_path(bs_request.number), class: 'request-index-title me-auto text-decoration-none') do
+          = render BsRequestActionsSummaryComponent.new(bs_request:, show_versions: Flipper.enabled?(:package_version_tracking, User.session))
+        .text-nowrap
+          = render BsRequestPriorityBadgeComponent.new(priority: bs_request.priority, overview: true)
+          = render BsRequestStateBadgeComponent.new(state: bs_request.state)
+      .d-flex.flex-wrap.align-items-center.column-gap-2.small.text-secondary.mt-1
+        = link_to("##{bs_request.number}", request_show_path(bs_request.number), id: "request-heading#{bs_request.number}",
+                  class: 'font-monospace link-secondary')
+        - if labels.any?
+          %span
+            = render partial: 'webui/shared/label_clickable', collection: labels.first(3), locals: { form: form }, as: :label
+            - if labels.size > 3
+              %span.badge.text-bg-light.border{ title: labels.drop(3).map(&:name).to_sentence }
+                +#{labels.size - 3}
+        %span.request-index-description.d-none.d-md-inline.text-truncate.text-body= bs_request.description
+        .d-flex.column-gap-3.ms-auto
           %span.text-nowrap
-            %i.fas.fa-list-check.ps-2
-            = bs_request_actions_count
-            actions
-        - if bs_request.comments.any?
-          %span.text-nowrap
-            %i.fas.fa-comment.ps-2
-            = pluralize(bs_request.comments.count, 'comment')
-        - if bs_request.reviews.any?
-          %span.text-nowrap
-            %i.fas.fa-magnifying-glass.ps-2
-            = pluralize(bs_request.reviews.count, 'reviews')
+            - if (creator = User.find_by_login(bs_request.creator))
+              = render AvatarComponent.new(name: bs_request.creator, email: creator.email, size: 18, custom_css: 'align-text-bottom')
+              %span.text-body= bs_request.creator
+            - else
+              A deleted user
+            ·
+            = render TimeComponent.new(time: bs_request.created_at)
+          - if comments_count.positive?
+            %span.text-nowrap{ title: pluralize(comments_count, 'comment') }
+              %i.fas.fa-comment
+              = comments_count
+          - if reviews.any?
+            %span.text-nowrap{ title: "#{reviews.count(&:accepted?)} of #{pluralize(reviews.size, 'review')} accepted" }
+              %i.fas.fa-magnifying-glass
+              #{reviews.count(&:accepted?)}/#{reviews.size}

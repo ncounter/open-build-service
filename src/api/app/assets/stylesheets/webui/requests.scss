@@ -61,9 +61,15 @@
   margin: auto;
 }
 
-.request-index-description {
-  height: calc(var(--bs-body-line-height) * 1em);
-  overflow: hidden;
+.request-index-item {
+  .request-index-icon { width: 1.5rem; }
+  // Lets the description truncate instead of widening the row
+  .request-index-content { min-width: 0; }
+  .request-index-description {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .request-index-title:hover { text-decoration: underline !important; }
 }
 
 .col-with-icon {
