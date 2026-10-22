@@ -82,6 +82,28 @@ RSpec.describe BsRequestActionsSummaryComponent, type: :component do
         expect(rendered_content).to have_text('+ 19 more')
         expect(rendered_content).to have_css('span[title="20 packages"]')
       end
+
+      it 'lists the summarized actions one per line in a popover' do
+        popover = page.find('.d-xl-inline span[data-bs-html="true"]', text: '+ 18 more', match: :first)
+        lines = Nokogiri::HTML.fragment(popover['data-bs-content']).css('li').map(&:text)
+
+        expect(lines.size).to eq(20)
+        expect(lines.first).to eq('pkg0 → openSUSE:Factory')
+      end
+    end
+
+    context 'with more actions than the popover shows' do
+      let(:actions) { submits(*Array.new(30) { |i| "pkg#{i}" }) }
+
+      before { render_inline(component) }
+
+      it 'cuts the list and points to the request' do
+        popover = page.find('.d-xl-inline span[data-bs-html="true"]', text: '+ 26 more')
+        lines = Nokogiri::HTML.fragment(popover['data-bs-content']).css('li').map(&:text)
+
+        expect(lines.size).to eq(26)
+        expect(lines.last).to eq('and 5 more, see the request')
+      end
     end
   end
 end

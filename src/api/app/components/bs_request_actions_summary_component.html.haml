@@ -53,17 +53,17 @@
           - if budget_groups.many?
             %i.text-secondary{ class: action_type_icon(group.type), title: group.type.humanize }
           - if group.named_count.zero?
-            %span{ data: { bs_toggle: 'popover', bs_content: group_content(group) } }
+            %span{ data: group_popover_data(group) }
               #{group.size} #{group_noun(group)}
           - else
             = safe_join(group.actions.first(group.named_count).map { |named| tag.strong(action_name(named), title: source_title(named)) }, ', ')
             = role_suffix(group) if group.type.in?(%w[add_role set_bugowner])
             - if group.remaining.positive?
-              %span.text-secondary{ data: { bs_toggle: 'popover', bs_content: group_content(group) } }
+              %span.text-secondary{ data: group_popover_data(group) }
                 + #{group.remaining} more
       %i.fas.fa-long-arrow-alt-right.text-info.mx-1
       - if targets.one?
         = targets.first
       - else
-        %span{ data: { bs_toggle: 'popover', bs_content: targets.to_sentence } }
+        %span{ data: targets_popover_data }
           #{targets.size} projects

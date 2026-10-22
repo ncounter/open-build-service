@@ -10,6 +10,8 @@ class BsRequestActionsSummaryComponent < ApplicationComponent
                  'change_devel' => 'devel change', 'maintenance_incident' => 'incident', 'maintenance_release' => 'release',
                  'release' => 'release' }.freeze
   VERBS = { 'maintenance_incident' => 'Maintenance incident', 'maintenance_release' => 'Maintenance release', 'release' => 'Release' }.freeze
+  # Longer lists are cut, the request page lists all of them
+  POPOVER_LIMIT = 25
 
   Group = Struct.new(:type, :actions, :named_count) do
     def size
@@ -92,8 +94,20 @@ class BsRequestActionsSummaryComponent < ApplicationComponent
     TYPE_NOUNS.fetch(group.type, 'action').pluralize(group.size)
   end
 
-  def group_content(group)
-    group.actions.map { |action| "#{action_name(action)} → #{target(action)}" }.to_sentence
+  # Data attributes of a popover listing one item per line
+  def popover_data(items)
+    lines = items.first(POPOVER_LIMIT)
+    lines += [tag.span("and #{items.size - POPOVER_LIMIT} more, see the request", class: 'text-secondary')] if items.size > POPOVER_LIMIT
+    content = tag.ul(safe_join(lines.map { |line| tag.li(line) }), class: 'list-unstyled mb-0')
+    { request_actions_popover: true, bs_html: 'true', bs_custom_class: 'request-actions-popover', bs_content: content }
+  end
+
+  def group_popover_data(group)
+    popover_data(group.actions.map { |action| safe_join([tag.strong(action_name(action)), ' → ', target(action)]) })
+  end
+
+  def targets_popover_data
+    popover_data(targets)
   end
 
   def version_change
