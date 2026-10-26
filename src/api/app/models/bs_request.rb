@@ -48,6 +48,14 @@ class BsRequest < ApplicationRecord
   scope :from_project_names, ->(project_names) { where(bs_request_actions: { source_project: project_names }) }
   scope :to_project_names, ->(project_names) { where(bs_request_actions: { target_project: project_names }) }
 
+  scope :search_action_fields, lambda { |search|
+    matching_action_ids = BsRequestAction.where(
+      'source_project LIKE :search OR source_package LIKE :search OR target_project LIKE :search OR target_package LIKE :search',
+      search: "%#{search}%"
+    ).select(:bs_request_id)
+    where(id: matching_action_ids)
+  }
+
   # Searching capabilities using dataTable (1.9)
   scope :do_search, lambda { |search|
     includes(:bs_request_actions)

@@ -149,7 +149,14 @@ module Webui::RequestsFilter # rubocop:disable Metrics/ModuleLength
       search_for_ids_options[:with] = { bs_request_id: @bs_requests.pluck(:id) }
     end
 
-    @bs_requests = @bs_requests.where(id: BsRequest.search_for_ids(@selected_filter['search'], search_for_ids_options))
+    search_matches = @bs_requests.where(id: BsRequest.search_for_ids(@selected_filter['search'], search_for_ids_options))
+    action_field_matches = @bs_requests.search_action_fields(@selected_filter['search'])
+    @bs_requests = search_matches.or(action_field_matches)
+
+    return unless @bs_requests.unscope(:group).limit(TEXT_SEARCH_MAX_RESULTS + 1).count > TEXT_SEARCH_MAX_RESULTS
+
+    flash.now[:error] = 'Your text search pattern matches too many results. Please, try again with a more restrictive search pattern.'
+    @bs_requests = BsRequest.none
   rescue ThinkingSphinx::ParseError, ThinkingSphinx::SyntaxError
     flash.now[:error] = "Check your search expression. Use the <a href='https://sphx.org/docs/sphinx3.html#cheat-sheet' target='blank'>syntax guide</a> for help."
     @bs_requests = BsRequest.none

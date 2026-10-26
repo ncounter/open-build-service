@@ -186,6 +186,12 @@ RSpec.describe Webui::Users::BsRequestsController do
         it { expect(assigns[:bs_requests]).to contain_exactly(request_with_review) }
       end
 
+      context 'and the search parameter partially matches an action project name', :thinking_sphinx do
+        let(:context_params) { { search: target_project.name.split(':').last.first(3) } }
+
+        it { expect(assigns[:bs_requests]).to include(incoming_request) }
+      end
+
       context 'and the package_name parameter is used' do
         let(:context_params) { { package_names: [incoming_request.bs_request_actions.first.source_package] } }
 
